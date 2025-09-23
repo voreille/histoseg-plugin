@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "histoseg-plugin"
+version = "0.1.0"
+description = "A FastAPI core for histopathology pipelines with pluggable viewer adapters"
+requires-python = ">=3.9"
+dependencies = ["fastapi", "uvicorn[standard]", "pydantic>=2,<3", "numpy"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
