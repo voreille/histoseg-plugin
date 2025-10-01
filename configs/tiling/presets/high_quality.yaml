@@ -1,0 +1,25 @@
+patch_size: 512
+step_size: 512
+patch_level: 0
+
+seg_params:
+  seg_level: -1
+  sthresh: 5
+  mthresh: 5
+  close: 4
+  use_otsu: false
+  keep_ids: "none"
+  exclude_ids: "none"
+
+filter_params:
+  a_t: 200
+  a_h: 32
+  max_n_holes: 8
+
+vis_params:
+  vis_level: -1
+  line_thickness: 500
+
+patch_params:
+  use_padding: true
+  contour_fn: "four_pt"
