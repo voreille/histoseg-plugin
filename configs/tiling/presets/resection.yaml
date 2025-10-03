@@ -1,7 +1,3 @@
-patch_size: 256
-step_size: 256
-patch_level: 0
-
 seg_params:
   seg_level: -1
   sthresh: 8

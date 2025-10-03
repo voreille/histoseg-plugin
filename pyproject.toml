@@ -8,20 +8,18 @@ version = "0.1.0"
 description = "A FastAPI core for histopathology pipelines with pluggable viewer adapters"
 requires-python = ">=3.9"
 dependencies = [
-    "click",
-    "pathlib2; python_version<'3.4'",
-    "openslide-python",
-    "h5py",
-    "opencv-python",
-    "pillow",
+    "fastapi", 
+    "uvicorn[standard]", 
+    "pydantic>=2,<3", 
     "numpy",
-    "scipy",
-    "scikit-image",
+    "click",
+    "tqdm",
+    "opencv-python",
+    "openslide-python",
+    "pillow",
+    "h5py",
     "matplotlib",
-    "timm",
-    "torch",
-    "torchvision",
-    "pandas",
+    "pyyaml",
 ]
 
 [project.scripts]

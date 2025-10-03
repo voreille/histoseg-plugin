@@ -1,12 +1,14 @@
+import math
+import os
+
+import cv2
 import h5py
 import numpy as np
-import os
-import pdb
-from wsi_core.util_classes import Mosaic_Canvas
 from PIL import Image
-import math
-import cv2
 from tqdm import tqdm
+
+from .util_classes import Mosaic_Canvas
+
 
 def isWhitePatch(patch, satThresh=5):
     patch_hsv = cv2.cvtColor(patch, cv2.COLOR_RGB2HSV)
