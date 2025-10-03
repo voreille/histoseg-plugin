@@ -31,9 +31,14 @@ class TilingResult:
     seg_time: float = 0.0
     patch_time: float = 0.0
     stitch_time: float = 0.0
+    tile_level: int = -1
+    tile_mpp: float = 0.0
     mask_path: Optional[Path] = None
     patch_path: Optional[Path] = None
     stitch_path: Optional[Path] = None
+    # add QA flags (see below)
+    mpp_within_tolerance: bool = True
+    mpp_reason: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -49,7 +54,6 @@ class TilingResult:
             if data.get(k) is not None:
                 data[k] = Path(data[k])
         return cls(**data)
-
 
 @dataclass
 class TilingJob:

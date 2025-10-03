@@ -155,8 +155,16 @@ def run_tiling_jobs(
                 generate_stitch=opts.generate_stitch,
                 verbose=opts.verbose,
             )
-            j.result = res
-            j.status = JobStatus.PROCESSED
+            # MPP policy
+            if opts.strict_mpp and not res.mpp_within_tolerance:
+                j.status = JobStatus.FAILED
+                j.result = res
+                j.error = res.mpp_reason or "Tile MPP out of tolerance"
+            else:
+                j.status = JobStatus.PROCESSED
+                j.result = res
+                j.error = None
+
         except Exception as e:
             if opts.verbose:
                 print(f"[{j.slide_id}] error: {e}")
