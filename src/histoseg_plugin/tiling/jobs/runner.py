@@ -156,7 +156,7 @@ def run_tiling_jobs(
                 verbose=opts.verbose,
             )
             # MPP policy
-            if opts.strict_mpp and not res.mpp_within_tolerance:
+            if opts.strict_mpp and not res.mpp_within_tolerance and j.config.tiling.level_mode == "auto":
                 j.status = JobStatus.FAILED
                 j.result = res
                 j.error = res.mpp_reason or "Tile MPP out of tolerance"

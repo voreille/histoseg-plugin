@@ -1,7 +1,8 @@
 tiling:
+  level_mode: "auto"
   tile_size: 256
   step_size: 256
-  target_tile_mpp: 0.30
+  target_tile_mpp: 0.50
   mpp_tolerance: 0.1
   tile_level: -1
   level_policy: "closest" # options: "closest", "lower", "higher", "exact"

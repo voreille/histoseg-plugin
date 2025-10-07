@@ -18,96 +18,117 @@ from .exceptions import (
 )
 
 
-def _get_level_mpps(wsi_obj) -> list[float]:
+def _get_level_mpps(wsi_obj) -> List[float]:
     """
     Return MPP per level. If OpenSlide properties are missing, derive from downsample.
     """
     wsi = wsi_obj.getOpenSlide()
     props = wsi.properties
-    base_mpp_x = props.get("openslide.mpp-x")
-    base_mpp_y = props.get("openslide.mpp-y")
-    base_mpp: Optional[float] = None
-    if base_mpp_x and base_mpp_y:
-        try:
-            base_mpp = (float(base_mpp_x) + float(base_mpp_y)) / 2.0
-        except Exception:
-            base_mpp = None
+    base = None
+    try:
+        bx = float(props.get("openslide.mpp-x", ""))
+        by = float(props.get("openslide.mpp-y", ""))
+        base = (bx + by) / 2.0
+    except Exception:
+        base = None
 
-    mpps: list[float] = []
+    mpps: List[float] = []
     for lvl in range(wsi.level_count):
         ds = float(wsi.level_downsamples[lvl])
-        if base_mpp is not None:
-            mpps.append(base_mpp * ds)
-        else:
-            # Fallback: approximate via downsample, normalized to level 0 = 1.0
-            mpps.append(ds)  # unitless; still useful for relative selection
+        mpps.append(base * ds if base is not None else ds)
     return mpps
 
 
-def select_tile_level(
+def _bounds(target_mpp: float, tol: float) -> Tuple[float, float]:
+    lo = target_mpp * (1 - tol)
+    hi = target_mpp * (1 + tol)
+    return lo, hi
+
+
+def select_tile_level_fixed(
     wsi_obj,
     *,
     tile_level: int,
-    target_tile_mpp: Optional[float],
+    target_tile_mpp: Optional[float] = None,
+    mpp_tolerance: float = 0.10,
+) -> Tuple[int, float, bool, str]:
+    """
+    Fixed mode: clamp level into available range; if target MPP is provided, check tolerance.
+    Returns: (level, mpp, within_tolerance, reason)
+    """
+    mpps = _get_level_mpps(wsi_obj)
+    if not mpps:
+        raise ValueError("No pyramid levels.")
+    lvl = max(0, min(tile_level, len(mpps) - 1))
+    mpp = mpps[lvl]
+    if target_tile_mpp is None:
+        return lvl, mpp, True, "fixed level; no target MPP"
+    lo, hi = _bounds(target_tile_mpp, mpp_tolerance)
+    ok = (lo <= mpp <= hi)
+    reason = "within tolerance" if ok else f"mpp {mpp:.3f} not in [{lo:.3f}, {hi:.3f}]"
+    return lvl, mpp, ok, reason
+
+
+def select_tile_level_auto(
+    wsi_obj,
+    *,
+    target_tile_mpp: float,
     mpp_tolerance: float,
     level_policy: LevelPolicy,
 ) -> Tuple[int, float, bool, str]:
     """
-    Returns: (chosen_level, chosen_mpp, within_tolerance, reason)
+    Auto mode: choose level according to policy and target MPP; check tolerance.
+    Returns: (level, mpp, within_tolerance, reason)
     """
     mpps = _get_level_mpps(wsi_obj)
-    n = len(mpps)
-    # If explicit level is given, use it and check tolerance (if target provided)
-    if tile_level >= 0:
-        lvl = min(max(tile_level, 0), n - 1)
-        mpp = mpps[lvl]
-        if target_tile_mpp is None:
-            return lvl, mpp, True, "explicit level, no target mpp"
-        lo = target_tile_mpp * (1 - mpp_tolerance)
-        hi = target_tile_mpp * (1 + mpp_tolerance)
-        ok = (lo <= mpp <= hi)
-        return lvl, mpp, ok, ("within tolerance" if ok else
-                              f"mpp {mpp:.3f} not in [{lo:.3f}, {hi:.3f}]")
+    if not mpps:
+        raise ValueError("No pyramid levels.")
 
-    # Auto-select based on policy and target MPP
-    if target_tile_mpp is None:
-        # Underspecified; fall back to closest to a reasonable scale (e.g., level 0)
-        lvl = 0
-        mpp = mpps[lvl]
-        return lvl, mpp, True, "auto fallback to level 0 (no target mpp)"
-
-    # Find candidate levels
+    # find closest candidate(s)
     diffs = [abs(m - target_tile_mpp) for m in mpps]
-    closest = min(range(n), key=lambda i: diffs[i])
+    closest = min(range(len(mpps)), key=lambda i: diffs[i])
 
     if level_policy == "closest":
         lvl = closest
     elif level_policy == "lower":
-        # choose level whose mpp <= target, closest on that side; fallback to closest
-        lower_idxs = [i for i, m in enumerate(mpps) if m <= target_tile_mpp]
-        lvl = min(lower_idxs, key=lambda i: abs(mpps[i] - target_tile_mpp)
-                  ) if lower_idxs else closest
-    elif level_policy == "higher":
-        higher_idxs = [i for i, m in enumerate(mpps) if m >= target_tile_mpp]
-        lvl = min(higher_idxs, key=lambda i: abs(mpps[i] - target_tile_mpp)
-                  ) if higher_idxs else closest
-    elif level_policy == "exact":
-        # only valid if there exists a level within tolerance; else signal not ok
-        lvl = closest
-    else:
-        lvl = closest  # defensive default
+        lowers = [i for i, m in enumerate(mpps) if m <= target_tile_mpp]
+        lvl = min(lowers, key=lambda i: abs(mpps[i] - target_tile_mpp)
+                  ) if lowers else closest
+    else:  # "higher"
+        highers = [i for i, m in enumerate(mpps) if m >= target_tile_mpp]
+        lvl = min(highers, key=lambda i: abs(mpps[i] - target_tile_mpp)
+                  ) if highers else closest
 
     mpp = mpps[lvl]
-    lo = target_tile_mpp * (1 - mpp_tolerance)
-    hi = target_tile_mpp * (1 + mpp_tolerance)
+    lo, hi = _bounds(target_tile_mpp, mpp_tolerance)
     ok = (lo <= mpp <= hi)
-    reason = (
-        "within tolerance" if ok else
-        f"mpp {mpp:.3f} not in [{lo:.3f}, {hi:.3f}] (target {target_tile_mpp:.3f})"
-    )
-    if level_policy == "exact" and not ok:
-        reason = "exact policy: no level within tolerance"
+    reason = "within tolerance" if ok else f"mpp {mpp:.3f} not in [{lo:.3f}, {hi:.3f}] (target {target_tile_mpp:.3f})"
     return lvl, mpp, ok, reason
+
+
+def select_tile_level_from_config(
+        wsi_obj,
+        tiling,  # your Tiling model (with level_mode)
+) -> Tuple[int, float, bool, str]:
+    """
+    Dispatcher that reads tiling.level_mode and calls the right selector.
+    """
+    if tiling.level_mode == "fixed":
+        return select_tile_level_fixed(
+            wsi_obj,
+            tile_level=tiling.tile_level,
+            target_tile_mpp=tiling.target_tile_mpp,  # optional QA check
+            mpp_tolerance=tiling.mpp_tolerance,
+        )
+    # auto
+    if tiling.target_tile_mpp is None:
+        raise ValueError("Auto mode requires target_tile_mpp.")
+    return select_tile_level_auto(
+        wsi_obj,
+        target_tile_mpp=tiling.target_tile_mpp,
+        mpp_tolerance=tiling.mpp_tolerance,
+        level_policy=tiling.level_policy,
+    )
 
 
 def _parse_ids(ids: str | List[int]) -> List[int]:
@@ -180,7 +201,6 @@ def process_single_wsi(
         raise LoadError(f"Failed to load {wsi_path}: {e}") from e
 
     # Params from Config
-    tiling_params = config.tiling.model_dump()
     seg_params = config.seg_params.model_dump()
     filter_params = config.filter_params.model_dump()
     vis_params = config.vis_params.model_dump()
@@ -232,12 +252,9 @@ def process_single_wsi(
         except Exception as e:
             raise MaskSavingError(f"Mask saving failed: {e}") from e
 
-    tile_level, tile_mpp, mpp_within_tolerance, mpp_reason = select_tile_level(
+    tile_level, tile_mpp, mpp_within_tolerance, mpp_reason = select_tile_level_from_config(
         wsi_obj,
-        tile_level=tiling_params.get("tile_level", -1),
-        target_tile_mpp=tiling_params.get("target_tile_mpp"),
-        mpp_tolerance=tiling_params.get("mpp_tolerance", 0.1),
-        level_policy=tiling_params.get("level_policy", "closest"),
+        tiling=config.tiling,
     )
 
     # Patches (fatal if requested)
@@ -287,7 +304,4 @@ def process_single_wsi(
         tile_mpp=tile_mpp,
         mpp_within_tolerance=mpp_within_tolerance,
         mpp_reason=mpp_reason,
-        # mask_path=mask_path if generate_mask else None,
-        # patch_path=patch_path if generate_patches else None,
-        # stitch_path=stitch_path if generate_stitch else None,
     )

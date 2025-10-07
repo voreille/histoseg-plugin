@@ -1,105 +1,167 @@
 # Histoseg Plugin - AI Coding Instructions
 
 ## Project Overview
-You're building **histoseg-plugin**: a viewer-agnostic histopathology inference core exposed as a FastAPI service with thin adapters (QuPath now, Sectra later).
+You're building **histoseg-plugin**: a WSI preprocessing and tiling pipeline with a planned FastAPI service and pluggable viewer adapters.
 
-The core runs a modular pipeline—**tiling → feature extraction → classification/attention → heatmap** (and optional polygons)—implemented as stateless, function-first code inside a single Python package (`src/histoseg_plugin`) and mirrored by a small CLI.
+Currently implements the **tiling stage** with tissue segmentation, patch coordinate extraction, and visualization stitching. The pipeline uses **level-0 pixel coordinates** throughout, stores intermediate data in **HDF5**, and outputs masks/stitches as images.
 
-All geometry uses **level-0 pixel coordinates**; intermediate data lives in **HDF5**; final overlays are **level-0–aligned PNG heatmaps** (plus optional vector contours) served from `/static`.
+The project follows a **job-based processing model** with YAML configurations, parameter validation via Pydantic, and CLI tools for batch processing.
 
-Adapters only pass a **WSI URI + ROI** and render the returned overlays; if the backend can't read the file, they export a temp OME-TIFF or stream tiles as fallback.
+## Current Implementation Status
 
-**Constraints**: keep adapters thin, keep the API stable, no CLAM coupling (CLAM is inspiration only), and make the core Docker-ready and easily swappable across viewers.
+### Implemented Components
+- **Tiling Module**: Complete WSI preprocessing pipeline in `src/histoseg_plugin/tiling/`
+- **Job System**: Parallel processing with YAML job persistence and status tracking
+- **CLI Tools**: `histoseg-process` for batch processing, `histoseg-params` (planned) for parameter management
+- **Configuration**: YAML-based configs with preset inheritance system
+- **OpenSlide Integration**: WSI format support with multi-level pyramid handling
 
-## Architecture
+### Planned/Missing Components
+- **FastAPI Service**: REST API for external integrations (dependencies declared but not implemented)
+- **Feature Extraction**: Deep learning pipeline for patch embeddings  
+- **Classification/Attention**: ML models for generating attention heatmaps
+- **Viewer Adapters**: QuPath and Sectra integration modules
 
-### Core Components
-- **FastAPI Service**: Main application framework (planned - not yet implemented)
-- **Modular Pipeline**: Stateless, function-first processing in `src/histoseg_plugin/`
-- **CLAM Resources**: Reference implementation in `resources/` (inspiration only, not coupled)
-- **Adapter System**: Thin viewer adapters (QuPath implemented, Sectra planned)
+## Critical Architecture Patterns
 
-### Key Data Flow
-1. **Tiling** → **Feature Extraction** → **Classification/Attention** → **Heatmap** (+ optional polygons)
-2. **Coordinate System**: All geometry uses level-0 pixel coordinates
-3. **Data Storage**: Intermediate data in HDF5, final overlays as level-0–aligned PNG heatmaps
-4. **API Interface**: WSI URI + ROI input → overlay outputs served from `/static`
-
-## Critical Patterns
-
-### Pipeline Architecture
-**Stateless, function-first design** in `src/histoseg_plugin/`:
-- Each pipeline stage as independent, composable functions
-- No CLAM coupling (inspiration only from `resources/`)
-- Docker-ready, viewer-agnostic core
-
-### Contour Processing API
-Optimized multiprocessing for patch coordinate generation in `src/histoseg_plugin/preprocessing/contour_proc.py`:
+### Job Processing System
+The core pattern is **job-based batch processing** with persistent state:
 ```python
-# Single contour processing
-process_single_contour(contour, contour_holes, level_dim0, level_downsamples, ...)
-# Batch processing to HDF5
-process_contours_to_hdf5(contours_tissue, holes_tissue, ...)
+# Create jobs from directory or YAML
+joblist = jobs_from_dir(source_dir, config, exts=(".svs", ".tiff"))
+# or
+joblist = jobs_from_yaml("jobs.yaml", slides_root=source_dir)
+
+# Run with status persistence
+run_tiling_jobs(joblist, output_dir, store=YamlJobStore(...), ...)
 ```
 
-### Adapter Pattern
-**Keep adapters thin** - they only:
-- Pass WSI URI + ROI to core
-- Render returned overlays
-- Handle fallbacks (temp OME-TIFF, tile streaming) if core can't read files
+### Configuration Hierarchy
+**Pydantic models** with **YAML config inheritance**:
+```python
+# Base config (configs/tiling/default.yaml)
+Config(tiling=Tiling(...), seg_params=SegmentationParams(...), ...)
 
+# Apply presets (configs/tiling/presets/*.yaml) 
+config = load_config_with_presets(default_yaml, presets=[...])
 
-### File Formats & Conventions
-- **Geometry**: Level-0 pixel coordinates throughout pipeline
-- **Intermediate Data**: HDF5 storage with `coords` dataset and metadata attributes
-- **Final Outputs**: Level-0–aligned PNG heatmaps + optional vector contours
-- **API Outputs**: Served from `/static` endpoint
-- **Configuration**: YAML configs in `resources/CLAM/heatmaps/configs/` (reference)
-- **Presets**: CSV parameter templates in `resources/CLAM/presets/` (reference)
+# CLI overrides via .with_tiling_overrides()
+```
+
+### WSI Processing Pipeline
+**Stateless functions** with **level-aware coordinate handling**:
+```python
+# Auto-select pyramid level based on target MPP
+level, mpp, within_tolerance, reason = select_tile_level(
+    wsi_obj, tile_level=-1, target_tile_mpp=0.30, level_policy="closest"
+)
+
+# Process single WSI through full pipeline
+result = process_single_wsi(wsi_path, output_dir, config, 
+                           generate_mask=True, generate_patches=True, generate_stitch=True)
+```
+
+## Key File Locations & Patterns
+
+### Configuration System
+- **Base Config**: `configs/tiling/default.yaml` - complete parameter specification
+- **Presets**: `configs/tiling/presets/*.yaml` - partial overrides for specific slide types (biopsy, resection, tcga, high_quality)
+- **Job Files**: Output `jobs.yaml` contains per-slide configs and processing status
+- **Parameter Models**: `src/histoseg_plugin/tiling/parameter_models.py` - Pydantic validation
+
+### Core Processing Files
+- **Main CLI**: `src/histoseg_plugin/tiling/create_patches.py` - batch processing entry point
+- **WSI Processing**: `src/histoseg_plugin/tiling/jobs/process_wsi.py` - core single-slide logic
+- **Job Management**: `src/histoseg_plugin/tiling/jobs/` - parallel execution, persistence, error handling
+- **WSI Wrapper**: `src/histoseg_plugin/tiling/WholeSlideImage.py` - OpenSlide integration with tissue segmentation
+
+### Output Structure
+```
+output_dir/
+├── jobs.yaml          # Job definitions with status tracking
+├── manifest.yaml      # Final effective configuration
+├── masks/             # Tissue segmentation visualizations (.jpg)
+├── patches/           # Patch coordinates in HDF5 (.h5)
+└── stitches/          # Downsampled patch mosaics (.jpg)
+```
 
 ## Development Workflows
 
-### Custom Preprocessing
-- Import from `wsi_core.util_classes` for contour checking functions
-- Use multiprocessing patterns from `contour_proc.py` for performance
-- Always specify absolute paths for HDF5 operations
-
-### Typical WSI Processing Commands
+### CLI Usage Patterns
 ```bash
-# Fast patching (coordinates only)
-python resources/CLAM/create_patches_fp.py --source DATA_DIR --save_dir RESULTS_DIR --patch_size 256 --seg --patch --stitch
+# Basic batch processing
+histoseg-process --source /data/slides --output /results --config configs/tiling/default.yaml
 
-# Feature extraction
-python resources/CLAM/extract_features_fp.py --data_h5_dir PATCHES_DIR --data_slide_dir SLIDES_DIR --feat_dir FEATURES_DIR
+# With preset for specific slide type
+histoseg-process --source /data/biopsies --output /results --config configs/tiling/presets/biopsy.yaml
 
-# Training
-python resources/CLAM/main.py --data_root_dir FEATURES_DIR --split_dir SPLITS_DIR
+# Resume interrupted processing (auto-skip completed slides)
+histoseg-process --source /data/slides --output /results --auto-skip
 
-# Heatmap generation
-python resources/CLAM/create_heatmaps.py --config config_template.yaml
+# Process specific slides from YAML list
+histoseg-process --process-list jobs.yaml --output /results
 ```
 
-## Key Dependencies & Integration
-- **OpenSlide**: WSI format support (.svs, .ndpi, .tiff)
-- **PyTorch + Timm**: Deep learning models and pretrained encoders
-- **H5py**: Efficient patch coordinate and feature storage
-- **OpenCV**: Image processing and contour operations
-- **FastAPI + Pydantic**: API framework (project goal)
+### Configuration Development
+```python
+# Load config with preset merging
+config = load_config_with_presets(
+    "configs/tiling/default.yaml", 
+    ["configs/tiling/presets/biopsy.yaml"]
+)
 
-## Important Notes
-- The main FastAPI application is not yet implemented - this is framework preparation
-- CLAM uses weak supervision (slide-level labels only, no patch annotations)
-- Memory-efficient: new pipeline stores coordinates, loads patches on-demand
-- Default patch size: 256x256, resized to 224x224 for feature extraction
-- Supports multiple encoder models: ResNet50, UNI, CONCH
-
-## File Structure Conventions
-```
-├── src/histoseg_plugin/          # Main plugin code
-├── resources/CLAM/               # CLAM reference implementation (inspiration)
-├── adapters/                     # Viewer adapter implementations (empty)
-├── configs/                      # Plugin configurations (empty)
-├── scripts/                      # Automation scripts (empty)
+# Runtime parameter overrides (immutable - returns new Config)
+config = config.with_tiling_overrides(
+    tile_size=512, target_tile_mpp=0.25, level_policy="lower"
+)
 ```
 
-When implementing new features, follow the HDF5 + multiprocessing patterns established in `contour_proc.py` and integrate with CLAM's coordinate-based pipeline for efficiency.
+### Extending Processing Logic
+When adding new functionality:
+1. **Add parameters** to appropriate Pydantic models in `parameter_models.py`
+2. **Update validation** in model `@model_validator` methods
+3. **Modify processing** in `process_single_wsi()` function
+4. **Test with presets** to ensure configuration inheritance works
+5. **Update job result tracking** in `TilingResult` dataclass
+
+## Important Implementation Details
+
+### Level Selection Logic
+The pipeline auto-selects WSI pyramid levels based on target MPP and policy:
+```python
+# Auto-select closest level to target MPP
+select_tile_level(wsi_obj, tile_level=-1, target_tile_mpp=0.30, 
+                 mpp_tolerance=0.1, level_policy="closest")
+# Returns: (chosen_level, actual_mpp, within_tolerance, reason)
+```
+
+### Multiprocessing Coordination
+- **Patch extraction** uses `multiprocessing.Pool` for coordinate generation
+- **Job execution** supports both serial and parallel processing via `ProcessPoolExecutor`
+- **File I/O** is thread-safe with atomic writes and locking for shared job state
+
+### Error Handling Strategy
+- **Typed exceptions** in `jobs/exceptions.py` for different failure modes
+- **Per-slide error tracking** with detailed error messages in job state
+- **Partial failure tolerance** - individual slide failures don't stop batch processing
+- **Resume capability** - failed jobs can be retried without reprocessing successful ones
+
+### Memory Management
+- **Streaming HDF5 writes** for large patch coordinate datasets
+- **Level-aware memory limits** for tissue segmentation (configurable pixel thresholds)
+- **On-demand patch loading** - coordinates stored, patches extracted when needed
+
+## Integration Points
+
+### CLAM Compatibility
+The `resources/CLAM/` directory contains reference implementations but is **not coupled** to the main pipeline. Use for inspiration only:
+- Config formats differ (YAML vs hardcoded parameters)
+- Processing logic is rewritten for modularity
+- HDF5 schemas are compatible for downstream feature extraction
+
+### Future FastAPI Integration
+When implementing the API service:
+- Reuse `process_single_wsi()` function as core processing logic
+- Expose job status endpoints using existing `TilingJobCollection` and store patterns
+- Serve static outputs from `/static` endpoint (masks, stitches)
+- Use existing Pydantic models for request/response validation
