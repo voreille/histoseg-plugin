@@ -28,6 +28,13 @@ test = [
     "pytest-mock>=3.0",
     "pytest-cov>=4.0",
 ]
+# Quickstart on CPU (works on Linux/macOS/Windows via PyPI)
+embed-cpu = [
+    "torch==2.4.*",
+    "torchvision==0.19.*",
+    "torchaudio==2.4.*",
+    # (add other embed libs that are torch-agnostic here too, e.g., "einops")
+]
 
 [project.scripts]
 histoseg-process = "histoseg_plugin.tiling.create_patches:main"

@@ -4,10 +4,9 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
-from histoseg_plugin.tiling.parameter_models import Config, LevelPolicy
-from histoseg_plugin.tiling.WholeSlideImage import WholeSlideImage
-from histoseg_plugin.tiling.wsi_utils import StitchCoords
-
+from ..parameter_models import Config, LevelPolicy
+from ..WholeSlideImage import WholeSlideImage
+from ..wsi_utils import StitchCoords
 from .domain import TilingResult
 from .exceptions import (
     LoadError,

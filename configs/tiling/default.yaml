@@ -23,7 +23,7 @@ filter_params:
 
 vis_params:
   vis_level: -1
-  line_thickness: 500
+  line_thickness: 250
 
 patch_params:
   use_padding: true
