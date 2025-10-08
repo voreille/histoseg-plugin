@@ -41,7 +41,7 @@ class WholeSlidePatchH5(Dataset):
     ):
         self.coords_h5_path = str(coords_h5_path)
         self.wsi_path = str(wsi_path)
-        self.tx = img_transforms
+        self.transform = img_transforms
 
         self._h5: Optional[h5py.File] = None
         self._wsi: Optional[SlideLike] = None
@@ -63,6 +63,8 @@ class WholeSlidePatchH5(Dataset):
         """Close and reopen handles if the process has changed (fork-safe)."""
         cur_pid = os.getpid()
         if self._pid != cur_pid:
+            print("I am reopening if needed, cause current pid is", os.getpid())
+            print("and my stored pid is", self._pid)
             self._close_handles()
             self._pid = cur_pid
 
@@ -115,8 +117,8 @@ class WholeSlidePatchH5(Dataset):
             (self.patch_size, self.patch_size),
         ).convert("RGB")
 
-        if self.tx:
-            img = self.tx(img)
+        if self.transform:
+            img = self.transform(img)
         return {"img": img, "coord": coords}
 
     def __del__(self) -> None:

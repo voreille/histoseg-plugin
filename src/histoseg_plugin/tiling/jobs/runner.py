@@ -48,17 +48,8 @@ def run_tiling_jobs_parallel(
     opts: RunOptions = RunOptions(),
 ) -> TilingJobCollection:
     output_dir = Path(output_dir)
-    inspector = OutputInspector(output_dir)
 
-    # Autoskip via filesystem inspection (treat as already done)
-    if opts.auto_skip:
-        for j in joblist.jobs:
-            if j.process and j.status in (JobStatus.PENDING, JobStatus.FAILED):
-                if inspector.is_complete(j.slide_id, opts):
-                    j.status = JobStatus.PROCESSED
-        if store:
-            with _store_lock:
-                store.save_statuses(joblist)
+    # TODO: add autoskip via filesystem inspection (treat as already done) ?
 
     idxs = joblist.pick_pending()
     if opts.verbose:
@@ -120,7 +111,8 @@ def run_tiling_jobs(
         opts: RunOptions = RunOptions(),
 ) -> TilingJobCollection:
     output_dir = Path(output_dir)
-    inspector = OutputInspector(output_dir)
+    # TODO: add or rm autoskip
+    # inspector = OutputInspector(output_dir)
 
     # normalize 'running' -> 'pending'
     joblist.normalize_for_resume()
@@ -128,14 +120,14 @@ def run_tiling_jobs(
         store.save_statuses(joblist)
 
     # filesystem-based autoskip
-    if opts.auto_skip:
-        for j in joblist.jobs:
-            if j.process and j.status in (JobStatus.PENDING, JobStatus.FAILED):
-                if inspector.is_complete(j.slide_id, opts):
-                    j.status = JobStatus.PROCESSED
-                    j.error = None
-        if store:
-            store.save_statuses(joblist)
+    # if opts.auto_skip:
+    #     for j in joblist.jobs:
+    #         if j.process and j.status in (JobStatus.PENDING, JobStatus.FAILED):
+    #             if inspector.is_complete(j.slide_id, opts):
+    #                 j.status = JobStatus.PROCESSED
+    #                 j.error = None
+    #     if store:
+            # store.save_statuses(joblist)
 
     # run eligible jobs
     for idx in joblist.pick_pending():
