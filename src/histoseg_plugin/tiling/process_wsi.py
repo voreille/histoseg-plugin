@@ -4,24 +4,32 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
-from ..parameter_models import Config, LevelPolicy
-from ..WholeSlideImage import WholeSlideImage
-from ..wsi_utils import StitchCoords
-from .domain import TilingResult
-from .exceptions import (
+import numpy as np
+import openslide
+
+from ..storage.factory import build_tiling_writer
+from ..storage.interfaces import TilingWriter
+from ..storage.specs import TilingStoresSpec
+from ..wsi_core.stitch import stitch_coords  # (coords_source, wsi, **kw) -> PIL.Image
+
+# ✅ make sure these point to your modules
+from ..wsi_core.segmentation import segment_tissue
+from ..wsi_core.visualization import vis_wsi
+from .contours_processing import (
+    process_contour,  # returns (coords: np.ndarray, attrs: dict)
+)
+from .jobs.domain import TilingResult
+from .jobs.exceptions import (
     LoadError,
     MaskSavingError,
     PatchError,
     SegmentationError,
     StitchError,
 )
+from .parameter_models import LevelPolicy, TilingConfig
 
 
-def _get_level_mpps(wsi_obj) -> List[float]:
-    """
-    Return MPP per level. If OpenSlide properties are missing, derive from downsample.
-    """
-    wsi = wsi_obj.getOpenSlide()
+def _get_level_mpps(wsi) -> List[float]:
     props = wsi.properties
     base = None
     try:
@@ -45,17 +53,13 @@ def _bounds(target_mpp: float, tol: float) -> Tuple[float, float]:
 
 
 def select_tile_level_fixed(
-    wsi_obj,
+    wsi,
     *,
     tile_level: int,
     target_tile_mpp: Optional[float] = None,
     mpp_tolerance: float = 0.10,
 ) -> Tuple[int, float, bool, str]:
-    """
-    Fixed mode: clamp level into available range; if target MPP is provided, check tolerance.
-    Returns: (level, mpp, within_tolerance, reason)
-    """
-    mpps = _get_level_mpps(wsi_obj)
+    mpps = _get_level_mpps(wsi)
     if not mpps:
         raise ValueError("No pyramid levels.")
     lvl = max(0, min(tile_level, len(mpps) - 1))
@@ -69,21 +73,16 @@ def select_tile_level_fixed(
 
 
 def select_tile_level_auto(
-    wsi_obj,
+    wsi,
     *,
     target_tile_mpp: float,
     mpp_tolerance: float,
     level_policy: LevelPolicy,
 ) -> Tuple[int, float, bool, str]:
-    """
-    Auto mode: choose level according to policy and target MPP; check tolerance.
-    Returns: (level, mpp, within_tolerance, reason)
-    """
-    mpps = _get_level_mpps(wsi_obj)
+    mpps = _get_level_mpps(wsi)
     if not mpps:
         raise ValueError("No pyramid levels.")
 
-    # find closest candidate(s)
     diffs = [abs(m - target_tile_mpp) for m in mpps]
     closest = min(range(len(mpps)), key=lambda i: diffs[i])
 
@@ -106,31 +105,25 @@ def select_tile_level_auto(
 
 
 def select_tile_level_from_config(
-        wsi_obj,
-        tiling,  # your Tiling model (with level_mode)
-) -> Tuple[int, float, bool, str]:
-    """
-    Dispatcher that reads tiling.level_mode and calls the right selector.
-    """
-    if tiling.level_mode == "fixed":
+        wsi, cfg_resolution) -> Tuple[int, float, bool, str]:
+    if cfg_resolution.level_mode == "fixed":
         return select_tile_level_fixed(
-            wsi_obj,
-            tile_level=tiling.tile_level,
-            target_tile_mpp=tiling.target_tile_mpp,  # optional QA check
-            mpp_tolerance=tiling.mpp_tolerance,
+            wsi,
+            tile_level=cfg_resolution.tile_level,
+            target_tile_mpp=cfg_resolution.target_tile_mpp,
+            mpp_tolerance=cfg_resolution.mpp_tolerance,
         )
-    # auto
-    if tiling.target_tile_mpp is None:
+    if cfg_resolution.target_tile_mpp is None:
         raise ValueError("Auto mode requires target_tile_mpp.")
     return select_tile_level_auto(
-        wsi_obj,
-        target_tile_mpp=tiling.target_tile_mpp,
-        mpp_tolerance=tiling.mpp_tolerance,
-        level_policy=tiling.level_policy,
+        wsi,
+        target_tile_mpp=cfg_resolution.target_tile_mpp,
+        mpp_tolerance=cfg_resolution.mpp_tolerance,
+        level_policy=cfg_resolution.level_policy,
     )
 
 
-def _parse_ids(ids: str | List[int]) -> List[int]:
+def _parse_ids(ids: Optional[Union[str, List[int]]]) -> List[int]:
     if isinstance(ids, list):
         return [int(x) for x in ids]
     if ids is None:
@@ -141,11 +134,9 @@ def _parse_ids(ids: str | List[int]) -> List[int]:
     return [int(x) for x in s.split(",") if str(x).strip() != ""]
 
 
-def _resolve_levels(wsi_obj, seg_level: int,
-                    vis_level: int) -> Tuple[int, int]:
+def _resolve_levels(wsi, seg_level: int, vis_level: int) -> Tuple[int, int]:
 
     def best_level() -> int:
-        wsi = wsi_obj.getOpenSlide()
         return int(wsi.get_best_level_for_downsample(64))
 
     s_lvl = best_level() if seg_level < 0 else int(seg_level)
@@ -153,15 +144,15 @@ def _resolve_levels(wsi_obj, seg_level: int,
     return s_lvl, v_lvl
 
 
-def _too_large_for_seg(wsi_obj, seg_level: int, px_limit: float = 1e8) -> bool:
-    w, h = wsi_obj.level_dim[seg_level]
+def _too_large_for_seg(wsi, seg_level: int, px_limit: float = 1e8) -> bool:
+    w, h = wsi.level_dimensions[seg_level]
     return (w * h) > px_limit
 
 
 def process_single_wsi(
     wsi_path: Union[str, Path],
-    output_dir: Union[str, Path],
-    config: Config,
+    config: TilingConfig,
+    store_spec: TilingStoresSpec,
     *,
     generate_mask: bool = True,
     generate_patches: bool = True,
@@ -170,32 +161,19 @@ def process_single_wsi(
 ) -> TilingResult:
     """
     Process one WSI and (optionally) produce: tissue mask, patch coordinates, and a stitched visualization.
-    Fatal policy: any requested stage that fails raises a typed exception; the runner sets job status/error.
-
-    Returns:
-        TilingResult with timings and output paths (on success).
     """
+    writer: TilingWriter = build_tiling_writer(store_spec)  # generic writer
     wsi_path = Path(wsi_path)
-    output_dir = Path(output_dir)
     slide_id = wsi_path.stem
 
-    # Output layout
-    masks_dir = output_dir / "masks"
-    patches_dir = output_dir / "patches"
-    stitches_dir = output_dir / "stitches"
-    for d in (masks_dir, patches_dir, stitches_dir):
-        d.mkdir(parents=True, exist_ok=True)
-
-    mask_path = masks_dir / f"{slide_id}.jpg"
-    patch_path = patches_dir / f"{slide_id}.h5"
-    stitch_path = stitches_dir / f"{slide_id}.jpg"
+    patch_path_str: Optional[str] = None
 
     if verbose:
         print(f"[{slide_id}] start")
 
-    # Open WSI (fatal)
+    # Open WSI
     try:
-        wsi_obj = WholeSlideImage(str(wsi_path))
+        wsi = openslide.OpenSlide(str(wsi_path))
     except Exception as e:
         raise LoadError(f"Failed to load {wsi_path}: {e}") from e
 
@@ -206,85 +184,99 @@ def process_single_wsi(
     patch_params = config.patch_params.model_dump()
 
     # Parse keep/exclude ids
-    seg_params["keep_ids"] = _parse_ids(
-        seg_params.get("keep_ids"))  # type: ignore[arg-type]
-    seg_params["exclude_ids"] = _parse_ids(
-        seg_params.get("exclude_ids"))  # type: ignore[arg-type]
+    seg_params["keep_ids"] = _parse_ids(seg_params.get("keep_ids"))
+    seg_params["exclude_ids"] = _parse_ids(seg_params.get("exclude_ids"))
 
     # Resolve levels
     seg_level, vis_level = _resolve_levels(
-        wsi_obj,
-        seg_params.get("seg_level", -1),
-        vis_params.get("vis_level", -1),
+        wsi,
+        int(seg_params.get("seg_level", -1)),
+        int(vis_params.get("vis_level", -1)),
     )
     seg_params["seg_level"] = seg_level
     vis_params["vis_level"] = vis_level
 
-    # Sanity: segmentation size
-    if _too_large_for_seg(wsi_obj, seg_level):
+    # Guard: segmentation size
+    if _too_large_for_seg(wsi, seg_level):
         raise SegmentationError(
             f"WSI too large for segmentation at level {seg_level}")
 
-    seg_time = 0.0
-    patch_time = 0.0
-    stitch_time = 0.0
+    seg_time = patch_time = stitch_time = 0.0
 
-    # Segmentation (fatal if any downstream is requested)
-    if generate_mask or generate_patches or generate_stitch:
-        if verbose:
-            print(f"[{slide_id}] segment tissue …")
-        t0 = time.perf_counter()
-        try:
-            wsi_obj.segmentTissue(**seg_params, filter_params=filter_params)
-        except Exception as e:
-            raise SegmentationError(f"Segmentation failed: {e}") from e
-        finally:
-            seg_time = time.perf_counter() - t0
+    # --- Segmentation ---
+    if verbose:
+        print(f"[{slide_id}] segment tissue …")
+    t0 = time.perf_counter()
+    try:
+        contours_tissue, holes_tissue = segment_tissue(
+            wsi,
+            **seg_params,
+            filter_params=filter_params,
+        )
+    except Exception as e:
+        raise SegmentationError(f"Segmentation failed: {e}") from e
+    finally:
+        seg_time = time.perf_counter() - t0
 
-    # Mask (fatal if requested)
+    # --- Mask ---
     if generate_mask:
         if verbose:
             print(f"[{slide_id}] render mask …")
         try:
-            pil_img = wsi_obj.visWSI(**vis_params)
-            pil_img.save(str(mask_path))
+            pil_img = vis_wsi(
+                wsi,
+                contours_tissue=contours_tissue,
+                holes_tissue=holes_tissue,
+                **vis_params,
+            )
+            mask_path = str(writer.save_mask(slide_id, pil_img))
+
         except Exception as e:
             raise MaskSavingError(f"Mask saving failed: {e}") from e
 
+    # --- Tile level selection ---
     tile_level, tile_mpp, mpp_within_tolerance, mpp_reason = select_tile_level_from_config(
-        wsi_obj,
-        tiling=config.tiling,
+        wsi,
+        cfg_resolution=config.resolution,
     )
 
-    # Patches (fatal if requested)
+    # --- Patch coords ---
     if generate_patches:
         if verbose:
             print(f"[{slide_id}] extract patch coords …")
         t1 = time.perf_counter()
         try:
-            _ = wsi_obj.process_contours(save_path=str(patches_dir),
-                                         patch_level=tile_level,
-                                         **patch_params)
+            patch_path_str = process_contours(
+                slide_id=slide_id,
+                wsi=wsi,
+                contours_tissue=contours_tissue,
+                holes_tissue=holes_tissue,
+                writer=writer,
+                patch_level=tile_level,
+                # pass through extra params; include step_size/patch_size, etc.
+                **patch_params,
+                # optional: propagate tile_mpp into attrs via kwargs if your processor accepts it
+            )
         except Exception as e:
             raise PatchError(f"Patch extraction failed: {e}") from e
         finally:
             patch_time = time.perf_counter() - t1
 
-    # Stitch (fatal if requested; if generate_patches was True, we assume the file now exists)
+    # --- Stitch ---
     if generate_stitch:
         if verbose:
             print(f"[{slide_id}] stitch heatmap …")
         t2 = time.perf_counter()
         try:
-            heatmap = StitchCoords(
-                str(patch_path),
-                wsi_obj,
+            heatmap = stitch_coords(
+                coords_source=patch_path_str,  # writer-specific path
+                wsi=wsi,
                 downscale=64,
                 bg_color=(0, 0, 0),
                 alpha=-1,
                 draw_grid=False,
             )
-            heatmap.save(str(stitch_path))
+            stitch_path = str(writer.save_stitch(slide_id, heatmap))
         except Exception as e:
             raise StitchError(f"Stitching failed: {e}") from e
         finally:
@@ -303,4 +295,63 @@ def process_single_wsi(
         tile_mpp=tile_mpp,
         mpp_within_tolerance=mpp_within_tolerance,
         mpp_reason=mpp_reason,
+        # mask_path=mask_path,
+        # patch_path=patch_path_str if generate_patches else None,
+        # stitch_path=stitch_path if generate_stitch else None,
     )
+
+
+def process_contours(
+    slide_id: str,
+    wsi: openslide.OpenSlide,
+    contours_tissue,
+    holes_tissue,
+    *,
+    writer: TilingWriter,
+    patch_level: int = 0,
+    patch_size: int = 256,
+    step_size: int = 256,
+    append: bool = True,
+    **kwargs,
+) -> Optional[str]:
+    """
+    Process all contours for a slide. Writes once or appends per-contour depending on `append`.
+    Returns a path-like string from the writer (if available).
+    """
+    n = len(contours_tissue)
+    if n == 0:
+        return None
+
+    final_path_str: Optional[str] = None
+    wrote_header = False
+    log_chunk = max(1, int(n * 0.05))
+
+    for idx, cont in enumerate(contours_tissue):
+        if (idx + 1) % log_chunk == 0:
+            print(f"Processing contour {idx+1}/{n}")
+
+        # Your process_contour returns (coords, attrs). Keep as-is, just shape/typing.
+        coords, attrs = process_contour(
+            wsi,
+            cont,
+            holes_tissue[idx],
+            patch_level=patch_level,
+            patch_size=patch_size,
+            step_size=step_size,
+            **kwargs,
+        )
+
+        # Normalize coords and build cont_idx mapping
+        coords = np.asarray(coords, dtype=np.int32).reshape(-1, 2)
+        if coords.size == 0:
+            continue
+        cont_idx = np.full((coords.shape[0], ), idx, dtype=np.int32)
+
+        if (not wrote_header) or (not append):
+            p = writer.save_coords(slide_id, coords, attrs, cont_idx=cont_idx)
+            final_path_str = str(p)
+            wrote_header = True
+        else:
+            writer.append_coords(slide_id, coords, cont_idx=cont_idx)
+
+    return final_path_str

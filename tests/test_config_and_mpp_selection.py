@@ -15,8 +15,8 @@ from unittest.mock import Mock
 import pytest
 import yaml
 
-from histoseg_plugin.tiling.config_ops import load_config_with_presets
-from histoseg_plugin.tiling.jobs.process_wsi import (
+from histoseg_plugin.tiling.config_loader import load_config_with_presets
+from histoseg_plugin.tiling.process_wsi import (
     _bounds,
     _get_level_mpps,
     select_tile_level_auto,

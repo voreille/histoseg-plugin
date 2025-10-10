@@ -200,7 +200,7 @@ $RECYCLE.BIN/
 *.mrxs
 
 # Processed data outputs
-data/
+/data/
 output/
 results/
 masks/
@@ -208,7 +208,7 @@ patches/
 stitches/
 features/
 heatmaps/
-models/
+/models/
 checkpoints/
 splits/
 

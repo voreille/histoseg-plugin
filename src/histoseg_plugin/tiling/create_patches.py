@@ -1,17 +1,22 @@
 from __future__ import annotations
+
 from pathlib import Path
+
 import click
 
 from .config_ops import load_config_with_presets
-from .parameter_models import Config
-from .jobs.runner import run_tiling_jobs
 from .jobs.factory import jobs_from_dir, jobs_from_yaml
-from .jobs.store import YamlJobStore
+from .process_wsi import process_single_wsi
 from .jobs.run_options import RunOptions
-from .jobs.process_wsi import process_single_wsi
+from .jobs.runner import run_tiling_jobs
+from .jobs.store import YamlJobStore
+from .parameter_models import TilingConfig
+from ..storage.config import StorageConfig
+from ..storage.specs import TilingStoresSpec
 
 project_dir = Path(__file__).resolve().parents[3]
-DEFAULT_CFG = project_dir / "configs" / "tiling" / "default.yaml"
+DEFAULT_CFG = project_dir / "configs" / "tiling.yaml"
+DEFAULT_STORAGE_CFG = project_dir / "configs" / "storage.yaml"
 
 
 @click.command()
@@ -72,7 +77,10 @@ def main(
     no_manifest: bool,
 ):
     # Load + merge configs (default then each preset in order)
-    cfg: Config = load_config_with_presets(config)
+    cfg: TilingConfig = load_config_with_presets(config)
+    storage_cfg: StorageConfig = StorageConfig.from_yaml(
+        DEFAULT_STORAGE_CFG).resolve_paths(base=output)
+    store_spec = TilingStoresSpec.from_config(storage_cfg)
 
     # Parse extensions
     file_extensions = tuple(ext.strip() for ext in extensions.split(","))
@@ -108,13 +116,13 @@ def main(
         click.echo(cfg.model_dump_json(indent=2))
         click.echo()
 
-    store = YamlJobStore(path=output / "jobs.yaml", slides_root=source)
+    job_store = YamlJobStore(path=output / "jobs.yaml", slides_root=source)
     # Run
     try:
         joblist = run_tiling_jobs(
             joblist,
             output_dir=output,
-            store=store,
+            job_store=job_store,
             process_single_fn=process_single_wsi,
             opts=RunOptions(
                 generate_mask=seg,
@@ -122,7 +130,12 @@ def main(
                 generate_stitch=stitch,
                 auto_skip=auto_skip,
                 verbose=not quiet,
+                mask_dir=storage_cfg.tiling.masks.dir,
+                patch_dir=storage_cfg.tiling.coords.dir,
+                stitch_dir=storage_cfg.tiling.stitches.dir,
+                write_manifest=not no_manifest,
             ),
+            store_spec=store_spec,
         )
     except Exception as e:
         click.echo(f"Error during processing: {e}", err=True)

@@ -5,12 +5,12 @@ from typing import Tuple
 
 from .domain import TilingJob, TilingJobCollection
 from .store import CsvJobStore, YamlJobStore
-from ..parameter_models import Config
+from ..parameter_models import TilingConfig
 
 
 def jobs_from_dir(
     source_dir: Path,
-    run_config: Config,
+    run_config: TilingConfig,
     exts: Tuple[str, ...] = (".svs", ".ndpi", ".tiff", ".tif")
 ) -> TilingJobCollection:
     source_dir = Path(source_dir)

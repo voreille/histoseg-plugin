@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from ..parameter_models import Config
+from ..parameter_models import TilingConfig
 
 
 class JobStatus(str, Enum):
@@ -58,7 +58,7 @@ class TilingResult:
 @dataclass
 class TilingJob:
     slide_path: Path
-    config: Config
+    config: TilingConfig
     process: bool = True
     status: JobStatus = JobStatus.PENDING
     result: Optional[TilingResult] = None

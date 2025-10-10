@@ -1,12 +1,13 @@
-from .h5_store import H5CoordsStore, H5FeatureStore
-from .config import CoordsStoreConfig, FeatureStoreConfig
+from .fs_writer import FSTilingWriter
+from .specs import TilingStoresSpec
 
-def build_coords_store(cfg: CoordsStoreConfig):
-    if cfg.kind == "h5":
-        return H5CoordsStore(cfg.path)
-    raise ValueError(f"Unknown coords store kind: {cfg.kind}")
 
-def build_feature_store(cfg: FeatureStoreConfig):
-    if cfg.kind == "h5":
-        return H5FeatureStore(cfg.path, compression=cfg.compression)
-    raise ValueError(f"Unknown feature store kind: {cfg.kind}")
+def build_tiling_writer(spec: TilingStoresSpec) -> FSTilingWriter:
+    return FSTilingWriter(
+        coords_dir=spec.coords_dir,
+        masks_dir=spec.masks_dir,
+        stitches_dir=spec.stitches_dir,
+        compression=spec.compression,
+        mask_ext=spec.mask_ext,
+        stitch_ext=spec.stitch_ext,
+    )

@@ -1,11 +1,13 @@
-tiling:
+resolution:
   level_mode: "auto"
-  tile_size: 256
-  step_size: 256
   target_tile_mpp: 0.50
   mpp_tolerance: 0.1
   tile_level: -1
   level_policy: "closest" # options: "closest", "lower", "higher", "exact"
+
+grid:
+  tile_size: 256
+  step_size: 256
 
 seg_params:
   seg_level: -1
@@ -25,6 +27,7 @@ vis_params:
   vis_level: -1
   line_thickness: 250
 
-patch_params:
+patch_params: # to keep CLAM nomenclature
   use_padding: true
   contour_fn: "four_pt"
+

@@ -6,7 +6,7 @@ from typing import Any, Dict, Iterable
 import yaml
 from pydantic import ValidationError
 
-from .parameter_models import Config
+from .parameter_models import TilingConfig
 
 
 def _deep_merge(base: Dict[str, Any], override: Dict[str,
@@ -28,7 +28,7 @@ def _load_yaml(path: Path | str) -> Dict[str, Any]:
 def load_config_with_presets(
     default_path: Path | str,
     presets: Iterable[Path | str] | None = None,
-) -> Config:
+) -> TilingConfig:
     """
     Load default.yaml, then apply each preset in order (later presets win).
     Presets can touch ANY keys (tiling and/or mutable blocks).
@@ -38,7 +38,7 @@ def load_config_with_presets(
     for p in (presets or []):
         merged = _deep_merge(merged, _load_yaml(p))
     try:
-        return Config.model_validate(merged)
+        return TilingConfig.model_validate(merged)
     except ValidationError as e:
         # Clear error message if a preset introduced an invalid/unknown field
         raise ValueError(

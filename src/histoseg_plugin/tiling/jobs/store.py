@@ -8,7 +8,7 @@ from typing import Any, List, Optional, Protocol
 import yaml
 
 from .domain import JobStatus, TilingJob, TilingJobCollection, TilingResult
-from ..parameter_models import Config
+from ..parameter_models import TilingConfig
 
 
 class JobStore(Protocol):
@@ -55,7 +55,7 @@ class CsvJobStore:
                 cfg_json = rec.get("config_json") or "{}"
                 jobs.append(
                     TilingJob(slide_path=slide_path,
-                              config=Config.model_validate_json(cfg_json),
+                              config=TilingConfig.model_validate_json(cfg_json),
                               process=process,
                               status=status))
         lst = TilingJobCollection(jobs)
@@ -139,7 +139,7 @@ class YamlJobStore(JobStore):
             status = JobStatus.coerce(rec.get("status"))
             j = TilingJob(
                 slide_path=self._abs(rec["slide_path"]),
-                config=Config.model_validate(rec["config"]),
+                config=TilingConfig.model_validate(rec["config"]),
                 process=bool(rec.get("process", True)),
                 status=status,
             )

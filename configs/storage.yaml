@@ -1,0 +1,14 @@
+tiling:
+  coords:
+    kind: h5
+    dir: patches/
+  stitches:
+    dir: stitches/
+  masks:
+    dir: masks/
+
+embedding:
+  features:
+    kind: h5
+    dir: features/
+    compression: lzf

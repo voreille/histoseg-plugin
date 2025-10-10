@@ -1,0 +1,4 @@
+model:
+  model_name: resnet50_trunc
+  weights_path: null
+  target_patch_size: 224

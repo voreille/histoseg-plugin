@@ -1,6 +1,7 @@
 from pydantic import BaseModel, ConfigDict
 from pathlib import Path
-from typing import Optional, Literal
+from typing import Optional, Literal, Union
+import yaml
 
 
 class StoreConfig(BaseModel):
@@ -42,3 +43,12 @@ class StorageConfig(BaseModel):
             embedding=EmbeddingStores(
                 features=self.embedding.features.resolve(base), ),
         )
+
+    @classmethod
+    def from_yaml(cls,
+                  path: Union[str, Path],
+                  root_key: Union[str, None] = None) -> "StorageConfig":
+        data = yaml.safe_load(Path(path).read_text()) or {}
+        if root_key:
+            data = data.get(root_key, {}) or {}
+        return cls.model_validate(data)

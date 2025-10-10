@@ -6,7 +6,7 @@ import os
 import h5py
 import numpy as np
 
-from .api import CoordsStore, FeatureStore
+from .interfaces import CoordsStore, FeatureStore
 
 
 class H5CoordsStore(CoordsStore):
