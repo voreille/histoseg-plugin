@@ -7,15 +7,11 @@ from typing import Any, Dict, Optional, Tuple, Union
 import cv2
 import numpy as np
 
-from ..wsi_core.contour_checker import (  # your checker module
+from ..wsi_core.contour_checker import (
     Contour_Checking_fn,
     build_contour_checker,
 )
-from .wsi_utils import (
-    assert_level_downsamples,  # your helper returning per-level (dx, dy)
-)
-
-# ---------- small helpers (picklable) ----------
+from ..wsi_core.geometry import compute_level_downsamples
 
 
 def _is_in_holes(holes, pt, patch_size: int) -> bool:
@@ -73,7 +69,7 @@ def process_contour(
         start_x, start_y = 0, 0
         w, h = wsi.level_dimensions[patch_level]
 
-    level_downsamples = assert_level_downsamples(wsi)  # [(dx,dy), ...]
+    level_downsamples = compute_level_downsamples(wsi)  # [(dx,dy), ...]
     pdx = int(level_downsamples[patch_level][0])
     pdy = int(level_downsamples[patch_level][1])
     ref_patch_w = patch_size * pdx

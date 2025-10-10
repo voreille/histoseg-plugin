@@ -10,14 +10,10 @@ import openslide
 from ..storage.factory import build_tiling_writer
 from ..storage.interfaces import TilingWriter
 from ..storage.specs import TilingStoresSpec
-from ..wsi_core.stitch import stitch_coords  # (coords_source, wsi, **kw) -> PIL.Image
-
-# ✅ make sure these point to your modules
 from ..wsi_core.segmentation import segment_tissue
+from ..wsi_core.stitch import stitch_coords
 from ..wsi_core.visualization import vis_wsi
-from .contours_processing import (
-    process_contour,  # returns (coords: np.ndarray, attrs: dict)
-)
+from .contours_processing import process_contour
 from .jobs.domain import TilingResult
 from .jobs.exceptions import (
     LoadError,

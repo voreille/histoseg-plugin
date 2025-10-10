@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import cv2
 from typing import Dict, List, Tuple
-from .geometry import level_downsamples, scale_contours, scale_holes
+from .geometry import compute_level_downsamples, scale_contours, scale_holes
 
 Array = np.ndarray
 
@@ -32,7 +32,7 @@ def segment_tissue(
     exclude_ids = exclude_ids or []
     keep_ids = keep_ids or []
 
-    downs = level_downsamples(wsi)
+    downs = compute_level_downsamples(wsi)
     img = np.array(
         wsi.read_region((0, 0), seg_level, wsi.level_dimensions[seg_level]))
     img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)

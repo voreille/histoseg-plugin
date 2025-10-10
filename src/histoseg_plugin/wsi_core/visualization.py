@@ -6,7 +6,7 @@ from PIL import Image
 import matplotlib.pyplot as plt
 from typing import List, Optional, Tuple
 
-from .geometry import level_downsamples, scale_contours, scale_holes
+from .geometry import compute_level_downsamples, scale_contours, scale_holes
 
 Array = np.ndarray
 
@@ -46,7 +46,7 @@ def vis_wsi(
     seg_display: bool = True,
     annot_display: bool = True,
 ):
-    downs = level_downsamples(wsi)
+    downs = compute_level_downsamples(wsi)
     ds = downs[vis_level]
     scale = [1 / ds[0], 1 / ds[1]]
 
@@ -165,7 +165,7 @@ def vis_heatmap(
     if vis_level < 0:
         vis_level = wsi.get_best_level_for_downsample(32)
 
-    downs = level_downsamples(wsi)
+    downs = compute_level_downsamples(wsi)
     ds = downs[vis_level]
     scale = [1 / ds[0], 1 / ds[1]]
     scores = scores.flatten() if scores.ndim == 2 else scores
@@ -273,7 +273,7 @@ def block_blending(img_rgb: np.ndarray,
                    alpha: float = 0.5,
                    blank_canvas: bool = False,
                    block_size: int = 1024):
-    downs = level_downsamples(wsi)[vis_level]
+    downs = compute_level_downsamples(wsi)[vis_level]
     w, h = img_rgb.shape[1], img_rgb.shape[0]
     bsx, bsy = min(block_size, w), min(block_size, h)
 

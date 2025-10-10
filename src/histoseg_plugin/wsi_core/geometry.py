@@ -6,7 +6,7 @@ from typing import Iterable, List, Tuple
 Array = np.ndarray
 
 
-def level_downsamples(wsi) -> List[Tuple[float, float]]:
+def compute_level_downsamples(wsi) -> List[Tuple[float, float]]:
     """Return (x, y) downsample per level, matching CLAM behavior."""
     outs = []
     dim0 = wsi.level_dimensions[0]
