@@ -1,8 +1,11 @@
 # wsi_core/segmentation.py
 from __future__ import annotations
-import numpy as np
+
+from typing import List, Tuple
+
 import cv2
-from typing import Dict, List, Tuple
+import numpy as np
+
 from .geometry import compute_level_downsamples, scale_contours, scale_holes
 
 Array = np.ndarray

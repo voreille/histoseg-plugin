@@ -6,7 +6,7 @@ import yaml
 
 class StoreConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["h5", "files"] = "files"
+    kind: Literal["h5", "files", "json"] = "files"
     dir: Path
     compression: Optional[str] = None  # h5-only
     extension: Optional[str] = None  # files-only

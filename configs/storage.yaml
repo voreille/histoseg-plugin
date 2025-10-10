@@ -1,6 +1,6 @@
 tiling:
   coords:
-    kind: h5
+    kind: json
     dir: patches/
   stitches:
     dir: stitches/

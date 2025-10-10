@@ -25,3 +25,6 @@ class TilingWriter(Protocol):
 
     def save_stitch(self, slide_id: str, image: Image.Image) -> Path:
         ...
+
+    def load_coords(self, slide_id: str) -> np.ndarray:
+        ...

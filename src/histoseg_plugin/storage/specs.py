@@ -11,6 +11,7 @@ class TilingStoresSpec:
     coords_dir: Path
     masks_dir: Path
     stitches_dir: Path
+    coords_kind: str = "h5"
     compression: Optional[str] = None
     mask_ext: str = ".png"
     stitch_ext: str = ".png"
@@ -19,6 +20,7 @@ class TilingStoresSpec:
     def from_config(cls, cfg: StorageConfig) -> "TilingStoresSpec":
         return cls(
             coords_dir=cfg.tiling.coords.dir,
+            coords_kind=cfg.tiling.coords.kind,
             masks_dir=cfg.tiling.masks.dir,
             stitches_dir=cfg.tiling.stitches.dir,
             compression=cfg.tiling.coords.compression,

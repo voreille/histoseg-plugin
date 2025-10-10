@@ -1,11 +1,12 @@
 # wsi_core/stitch.py
 from __future__ import annotations
-from typing import Any, Dict, Tuple, Union
-from pathlib import Path
 
+from pathlib import Path
+from typing import Any, Dict, Tuple, Union
+
+import cv2
 import h5py
 import numpy as np
-import cv2
 from PIL import Image
 from tqdm import tqdm
 

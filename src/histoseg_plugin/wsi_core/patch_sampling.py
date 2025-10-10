@@ -6,7 +6,7 @@ import multiprocessing as mp
 import cv2
 from typing import Dict, Iterable, List, Tuple, Optional, Callable, Any
 
-from .geometry import level_downsamples
+from .geometry import compute_level_downsamples
 from .contour_checker import build_contour_checker, Contour_Checking_fn
 from wsi_core.wsi_utils import save_hdf5
 # optional: isBlackPatch / isWhitePatch if you also want to filter images here
@@ -56,7 +56,7 @@ def extract_coords_for_contour(
     bot_right: Optional[Tuple[int, int]] = None,
     max_workers: int = 4,
 ) -> Tuple[Dict[str, Array], Dict[str, Dict[str, Any]]]:
-    downs = level_downsamples(wsi)
+    downs = compute_level_downsamples(wsi)
     lvl_dims = wsi.level_dimensions
     start_x, start_y, w, h = cv2.boundingRect(
         contour) if contour is not None else (0, 0, *lvl_dims[patch_level])
@@ -169,7 +169,7 @@ def iter_patches_over_contour(
     use_padding: bool = True,
     name: Optional[str] = None,
 ):
-    downs = level_downsamples(wsi)
+    downs = compute_level_downsamples(wsi)
     pdx = int(downs[patch_level][0])
     pdy = int(downs[patch_level][1])
 
