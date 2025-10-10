@@ -7,8 +7,8 @@ from typing import List, Optional, Tuple, Union
 import numpy as np
 import openslide
 
-from ..storage.factory import build_tiling_writer
-from ..storage.interfaces import TilingWriter
+from ..storage.factory import build_tiling_store
+from ..storage.interfaces import TilingStore
 from ..storage.specs import TilingStoresSpec
 from ..wsi_core.segmentation import segment_tissue
 from ..wsi_core.stitch import stitch_coords
@@ -158,7 +158,8 @@ def process_single_wsi(
     """
     Process one WSI and (optionally) produce: tissue mask, patch coordinates, and a stitched visualization.
     """
-    writer: TilingWriter = build_tiling_writer(store_spec)  # generic writer
+    tiling_store: TilingStore = build_tiling_store(
+        store_spec)  # generic writer
     wsi_path = Path(wsi_path)
     slide_id = wsi_path.stem
 
@@ -225,7 +226,7 @@ def process_single_wsi(
                 holes_tissue=holes_tissue,
                 **vis_params,
             )
-            mask_path = str(writer.save_mask(slide_id, pil_img))
+            mask_path = str(tiling_store.save_mask(slide_id, pil_img))
 
         except Exception as e:
             raise MaskSavingError(f"Mask saving failed: {e}") from e
@@ -247,7 +248,7 @@ def process_single_wsi(
                 wsi=wsi,
                 contours_tissue=contours_tissue,
                 holes_tissue=holes_tissue,
-                writer=writer,
+                writer=tiling_store,
                 patch_level=tile_level,
                 # pass through extra params; include step_size/patch_size, etc.
                 **patch_params,
@@ -264,15 +265,17 @@ def process_single_wsi(
             print(f"[{slide_id}] stitch heatmap …")
         t2 = time.perf_counter()
         try:
+            coords, _, attrs = tiling_store.load_coords(slide_id)
             heatmap = stitch_coords(
-                coords_source=patch_path_str,  # writer-specific path
+                coords=coords,
+                attrs=attrs,
                 wsi=wsi,
                 downscale=64,
                 bg_color=(0, 0, 0),
                 alpha=-1,
                 draw_grid=False,
             )
-            stitch_path = str(writer.save_stitch(slide_id, heatmap))
+            stitch_path = str(tiling_store.save_stitch(slide_id, heatmap))
         except Exception as e:
             raise StitchError(f"Stitching failed: {e}") from e
         finally:
@@ -303,7 +306,7 @@ def process_contours(
     contours_tissue,
     holes_tissue,
     *,
-    writer: TilingWriter,
+    writer: TilingStore,
     patch_level: int = 0,
     patch_size: int = 256,
     step_size: int = 256,

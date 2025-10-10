@@ -10,11 +10,10 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
-CoordsSource = Union[str, Path, Tuple[np.ndarray, Dict[str, Any]]]
-
 
 def stitch_coords(
-    coords_source: CoordsSource,
+    coords,
+    attrs,
     wsi,
     *,
     downscale: int = 16,
@@ -30,7 +29,6 @@ def stitch_coords(
       - str/Path -> HDF5 file with datasets: /coords (Nx2). Reads attrs from /coords.attrs
       - (coords, attrs) -> in-memory (coords Nx2 int32, attrs dict with patch_size, patch_level)
     """
-    coords, attrs = _load_coords(coords_source)
 
     w0, h0 = wsi.level_dimensions[0]
     print(f"original size: {w0} x {h0}")
@@ -78,22 +76,6 @@ def stitch_coords(
     )
 
     return Image.fromarray(img)
-
-
-def _load_coords(
-        coords_source: CoordsSource) -> Tuple[np.ndarray, Dict[str, Any]]:
-    if isinstance(coords_source, (str, Path)):
-        path = Path(coords_source)
-        with h5py.File(path, "r") as f:
-            dset = f["coords"]
-            coords = dset[...]
-            attrs = {k: dset.attrs[k] for k in dset.attrs.keys()}
-        print(f"start stitching {attrs.get('name', path.stem)}")
-        return coords, attrs
-
-    # in-memory (coords, attrs)
-    coords, attrs = coords_source
-    return np.asarray(coords, dtype=np.int32).reshape(-1, 2), dict(attrs)
 
 
 def _draw_map_from_coords(
