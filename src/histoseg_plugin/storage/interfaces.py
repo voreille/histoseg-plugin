@@ -1,12 +1,15 @@
 # storage/interfaces.py
 from __future__ import annotations
+
 from pathlib import Path
 from typing import Any, Dict, Optional, Protocol, Tuple
+
 import numpy as np
 from PIL import Image
 
 
 class TilingStore(Protocol):
+
     def save_coords(
         self,
         slide_id: str,
@@ -39,4 +42,23 @@ class TilingStore(Protocol):
         ...
 
     def coords_path(self, slide_id: str) -> Path:
+        ...
+
+
+class EmbeddingStore(Protocol):
+    """Append-friendly store for per-slide feature batches."""
+
+    def begin_slide(self, slide_id: str, *, dim: int,
+                    attrs: Dict[str, Any]) -> None:
+        ...
+
+    def append_batch(self, slide_id: str, features: np.ndarray,
+                     coords: np.ndarray) -> None:
+        ...
+
+    def finalize_slide(self, slide_id: str) -> Path:
+        ...
+
+    def load(self,
+             slide_id: str) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
         ...

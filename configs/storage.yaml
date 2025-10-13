@@ -10,5 +10,5 @@ tiling:
 embedding:
   features:
     kind: h5
-    dir: features/
+    dir: features/h5_files
     compression: lzf
