@@ -18,13 +18,14 @@ class H5EmbeddingStore(EmbeddingStore):
       - attrs:    slide-level metadata (f.attrs)
     """
 
-    def __init__(self,
-                 *,
-                 root_dir: Path,
-                 slides_root: Path,
-                 features_dir: Path,
-                 compression: Optional[str] = None,
-                 pt_dir: Optional[Path] = None) -> None:
+    def __init__(
+        self,
+        *,
+        root_dir: Path,
+        slides_root: Path,
+        features_dir: Path,
+        compression: Optional[str] = None,
+    ) -> None:
         self.root_dir = Path(root_dir)
         self.root_dir.mkdir(parents=True, exist_ok=True)
         if not slides_root.exists():
@@ -34,10 +35,9 @@ class H5EmbeddingStore(EmbeddingStore):
         self.features_dir.mkdir(parents=True, exist_ok=True)
 
         self.comp = compression
-        self.pt_dir = Path(pt_dir) if pt_dir else None
 
     def _path(self, slide_id: str) -> Path:
-        return self.root_dir / f"{slide_id}.h5"
+        return self.features_dir / f"{slide_id}.h5"
 
     # ---------- write path ----------
     def begin_slide(self, slide_id: str, *, dim: int,

@@ -56,7 +56,6 @@ class TilingStoreConfig(BaseModel):
 class EmbeddingStoreConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     features: StoreConfig
-    export_pt: ExportPtConfig
 
     @classmethod
     def from_yaml(
@@ -70,8 +69,6 @@ class EmbeddingStoreConfig(BaseModel):
         return cls.model_validate(data)
 
     def resolve_paths(self, base: Path) -> "EmbeddingStoreConfig":
-        return self.model_copy(
-            update={
-                "features": self.features.resolve(base),
-                "export_pt": self.export_pt.resolve(base),
-            })
+        return self.model_copy(update={
+            "features": self.features.resolve(base),
+        })

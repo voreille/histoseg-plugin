@@ -108,4 +108,7 @@ class JSONTilingStore(BaseTilingStore):
         return coords, cont_idx, attrs
 
     def slide_ids(self) -> list[str]:
-        return [p.stem for p in self.coords_dir.glob("*.coords.jsonl")]
+        return [
+            p.name.replace(".coords.jsonl", "")
+            for p in self.coords_dir.glob("*.coords.jsonl")
+        ]

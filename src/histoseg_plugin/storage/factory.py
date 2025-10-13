@@ -65,7 +65,6 @@ def build_embedding_store(
             features_dir=spec.features_dir,
             slides_root=slides_root,
             compression=getattr(spec.compression, "compression", None),
-            pt_dir=spec.pt_dir,
         )
 
     else:

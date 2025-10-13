@@ -54,9 +54,6 @@ class WholeSlidePatch(Dataset):
         """Close and reopen handles if the process has changed (fork-safe)."""
         cur_pid = os.getpid()
         if self._pid != cur_pid:
-            print("I am reopening if needed, cause current pid is",
-                  os.getpid())
-            print("and my stored pid is", self._pid)
             self._close_handles()
             self._pid = cur_pid
 

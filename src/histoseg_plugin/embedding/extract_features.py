@@ -57,6 +57,10 @@ DEFAULT_STORAGE_CFG = project_dir / "configs" / "storage.yaml"
     is_flag=True,
     help="Use autocast on CUDA for speed.",
 )
+@click.option(
+    "--export-pt",
+    is_flag=True,
+)
 def main(
     tiles_rootdir: Path,
     slides_rootdir: Path,
@@ -67,6 +71,7 @@ def main(
     target_patch_size: int,
     no_auto_skip: bool,
     use_amp: bool,
+    export_pt: bool,
 ):
     # Build stores from config + runtime roots
     embedding_store_spec = EmbeddingStoresSpec.from_yaml(
@@ -140,10 +145,10 @@ def main(
 
         embedding_store.finalize_slide(slide_id)
 
-        if embedding_store_spec.enable_pt_export and embedding_store_spec.pt_dir is not None:
-
-            out = embedding_store.export_to_pt(slide_id,
-                                               embedding_store_spec.pt_dir)
+        if export_pt:
+            pt_dir = output_dir / "pt_files"
+            pt_dir.mkdir(parents=False, exist_ok=True)
+            out = embedding_store.export_to_pt(slide_id, pt_dir)
             tqdm.write(f"Exported {slide_id} to {out}")
 
 

@@ -67,8 +67,6 @@ class EmbeddingStoresSpec:
     features_dir: Path
     kind: str = "h5"
     compression: Optional[str] = None
-    pt_dir: Optional[Path] = None
-    enable_pt_export: bool = False
 
     @classmethod
     def from_config(cls, cfg: EmbeddingStoreConfig) -> "EmbeddingStoresSpec":
@@ -76,8 +74,6 @@ class EmbeddingStoresSpec:
             features_dir=cfg.features.dir,
             kind=cfg.features.kind,
             compression=cfg.features.compression,
-            pt_dir=cfg.export_pt.dir,
-            enable_pt_export=cfg.export_pt.enabled,
         )
 
     @classmethod
