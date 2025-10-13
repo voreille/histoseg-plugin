@@ -13,7 +13,7 @@ _VALID = {"resnet50_trunc", "uni_v1", "conch_v1"}
 
 
 def get_encoder(name: str,
-                target_img_size: int = 224) -> Tuple[nn.Module, T.Compose]:
+                target_img_size: int = 224) -> Tuple[nn.Module, T.Compose, int]:
     name = name.lower()
     if name == "resnet50_trunc":
         m = timm.create_model("resnet50", pretrained=True,
@@ -24,7 +24,7 @@ def get_encoder(name: str,
             T.ToTensor(),
             T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ])
-        return m, tx
+        return m, tx, m.num_features
     elif name == "uni_v1":
         # TODO: replace with your encoder + proper transforms
         m = timm.create_model("convnext_tiny", pretrained=True, num_classes=0)
@@ -34,7 +34,7 @@ def get_encoder(name: str,
             T.ToTensor(),
             T.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
         ])
-        return m, tx
+        return m, tx, m.num_features
     elif name == "conch_v1":
         # TODO
         m = timm.create_model("efficientnet_b0",
@@ -46,6 +46,6 @@ def get_encoder(name: str,
             T.ToTensor(),
             T.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
         ])
-        return m, tx
+        return m, tx, m.num_features
     else:
         raise ValueError(f"Unknown encoder '{name}'. Valid: {_VALID}")

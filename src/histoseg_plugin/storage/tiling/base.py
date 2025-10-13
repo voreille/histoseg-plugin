@@ -5,6 +5,8 @@ from typing import Optional
 import numpy as np
 from PIL import Image
 
+from ..interfaces import TilingStore
+
 _EXT_TO_FORMAT = {
     ".png": "PNG",
     ".jpg": "JPEG",
@@ -23,25 +25,29 @@ def _pil_format_for_ext(ext: str) -> str:
     return fmt
 
 
-class BaseTilingStore:
+class BaseTilingStore(TilingStore):
 
     def __init__(
         self,
+        *,
+        root_dir: Path,
         coords_dir: Path,
         masks_dir: Path,
         stitches_dir: Path,
-        *,
+        slides_root: Path,
         mask_ext: str = ".png",
         stitch_ext: str = ".png",
     ) -> None:
-        self.coords_dir = Path(coords_dir)
+        self.root_dir = root_dir
+        self.coords_dir = root_dir / coords_dir
         self.coords_dir.mkdir(parents=True, exist_ok=True)
-        self.masks_dir = Path(masks_dir)
+        self.masks_dir = root_dir / masks_dir
         self.masks_dir.mkdir(parents=True, exist_ok=True)
-        self.stitches_dir = Path(stitches_dir)
+        self.stitches_dir = root_dir / stitches_dir
         self.stitches_dir.mkdir(parents=True, exist_ok=True)
         self.mask_ext = mask_ext
         self.stitch_ext = stitch_ext
+        self.slides_root = slides_root
 
     def save_mask(self, slide_id: str, image: Image.Image) -> Path:
         out = self.masks_dir / f"{slide_id}{self.mask_ext}"

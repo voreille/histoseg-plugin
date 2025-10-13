@@ -12,6 +12,7 @@ from ..parameter_models import TilingConfig
 
 
 class JobStore(Protocol):
+    slides_root: Path | None
 
     def load(self) -> TilingJobCollection:
         ...
@@ -54,10 +55,11 @@ class CsvJobStore:
                 status = JobStatus.coerce(rec.get("status"))
                 cfg_json = rec.get("config_json") or "{}"
                 jobs.append(
-                    TilingJob(slide_path=slide_path,
-                              config=TilingConfig.model_validate_json(cfg_json),
-                              process=process,
-                              status=status))
+                    TilingJob(
+                        slide_path=slide_path,
+                        config=TilingConfig.model_validate_json(cfg_json),
+                        process=process,
+                        status=status))
         lst = TilingJobCollection(jobs)
         lst.normalize_for_resume()
         return lst

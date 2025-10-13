@@ -12,3 +12,6 @@ embedding:
     kind: h5
     dir: features/h5_files
     compression: lzf
+  export_pt:
+    enabled: true
+    dir: features/pt_files

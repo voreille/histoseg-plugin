@@ -9,6 +9,8 @@ from PIL import Image
 
 
 class TilingStore(Protocol):
+    slides_root: Path
+    root_dir: Path
 
     def save_coords(
         self,
@@ -44,9 +46,15 @@ class TilingStore(Protocol):
     def coords_path(self, slide_id: str) -> Path:
         ...
 
+    def slide_ids(self) -> list[str]:
+        ...
+
 
 class EmbeddingStore(Protocol):
     """Append-friendly store for per-slide feature batches."""
+
+    slides_root: Path
+    root_dir: Path
 
     def begin_slide(self, slide_id: str, *, dim: int,
                     attrs: Dict[str, Any]) -> None:
@@ -61,4 +69,7 @@ class EmbeddingStore(Protocol):
 
     def load(self,
              slide_id: str) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any]]:
+        ...
+
+    def export_to_pt(self, slide_id: str, pt_dir: Path) -> Path:
         ...

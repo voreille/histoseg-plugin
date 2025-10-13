@@ -38,7 +38,6 @@ embed-cpu = [
 
 [project.scripts]
 histoseg-process = "histoseg_plugin.tiling.create_patches:main"
-histoseg-params = "histoseg_plugin.tiling.param_cli:params"
 
 [tool.setuptools.packages.find]
 where = ["src"]

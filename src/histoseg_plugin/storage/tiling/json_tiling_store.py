@@ -18,24 +18,6 @@ class JSONTilingStore(BaseTilingStore):
       masks/ and stitches/ are standard images (atomic write with .part).
     """
 
-    def __init__(
-        self,
-        coords_dir: Path,
-        masks_dir: Path,
-        stitches_dir: Path,
-        *,
-        mask_ext: str = ".png",
-        stitch_ext: str = ".png",
-    ) -> None:
-        self.coords_dir = Path(coords_dir)
-        self.coords_dir.mkdir(parents=True, exist_ok=True)
-        self.masks_dir = Path(masks_dir)
-        self.masks_dir.mkdir(parents=True, exist_ok=True)
-        self.stitches_dir = Path(stitches_dir)
-        self.stitches_dir.mkdir(parents=True, exist_ok=True)
-        self.mask_ext = mask_ext
-        self.stitch_ext = stitch_ext
-
     # ---- paths ----
     def _paths(self, slide_id: str) -> Tuple[Path, Path]:
         base = self.coords_dir / slide_id
@@ -124,3 +106,6 @@ class JSONTilingStore(BaseTilingStore):
         coords = np.asanyarray(list(zip(xs, ys)), dtype=np.int32)
         cont_idx = np.asanyarray(cis, dtype=np.int32)
         return coords, cont_idx, attrs
+
+    def slide_ids(self) -> list[str]:
+        return [p.stem for p in self.coords_dir.glob("*.coords.jsonl")]

@@ -4,15 +4,14 @@ from pathlib import Path
 
 import click
 
+from ..storage.specs import TilingStoresSpec
 from .config_ops import load_config_with_presets
 from .jobs.factory import jobs_from_dir, jobs_from_yaml
-from .process_wsi import process_single_wsi
 from .jobs.run_options import RunOptions
 from .jobs.runner import run_tiling_jobs
 from .jobs.store import YamlJobStore
 from .parameter_models import TilingConfig
-from ..storage.config import StorageConfig
-from ..storage.specs import TilingStoresSpec
+from .process_wsi import process_single_wsi
 
 project_dir = Path(__file__).resolve().parents[3]
 DEFAULT_CFG = project_dir / "configs" / "tiling.yaml"
@@ -78,9 +77,8 @@ def main(
 ):
     # Load + merge configs (default then each preset in order)
     cfg: TilingConfig = load_config_with_presets(config)
-    storage_cfg: StorageConfig = StorageConfig.from_yaml(
-        DEFAULT_STORAGE_CFG).resolve_paths(base=output)
-    store_spec = TilingStoresSpec.from_config(storage_cfg)
+    store_spec = TilingStoresSpec.from_yaml(path=DEFAULT_STORAGE_CFG,
+                                            root_key="tiling")
 
     # Parse extensions
     file_extensions = tuple(ext.strip() for ext in extensions.split(","))
@@ -102,12 +100,12 @@ def main(
 
     # Prepare output
     output.mkdir(parents=True, exist_ok=True)
+    store_spec.to_json(output / ".tiling_store.json")
+
     if not no_manifest:
-        # Save the effective config so downstream steps know what was used
         (output / "manifest.yaml").write_text(
             cfg.model_dump_json(indent=2).replace("true", "true").replace(
                 "false", "false"))
-        # If you prefer YAML: cfg.to_yaml(output / "manifest.yaml")
 
     if not quiet:
         click.echo(f"Source: {source}")
@@ -121,18 +119,16 @@ def main(
     try:
         joblist = run_tiling_jobs(
             joblist,
-            output_dir=output,
             job_store=job_store,
             process_single_fn=process_single_wsi,
             opts=RunOptions(
+                slide_rootdir=source,
+                tile_rootdir=output,
                 generate_mask=seg,
                 generate_patches=patch,
                 generate_stitch=stitch,
                 auto_skip=auto_skip,
                 verbose=not quiet,
-                mask_dir=storage_cfg.tiling.masks.dir,
-                patch_dir=storage_cfg.tiling.coords.dir,
-                stitch_dir=storage_cfg.tiling.stitches.dir,
                 write_manifest=not no_manifest,
             ),
             store_spec=store_spec,

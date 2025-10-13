@@ -53,14 +53,12 @@ def process_contour(
     top_left: Optional[Tuple[int, int]] = None,
     bot_right: Optional[Tuple[int, int]] = None,
     max_workers: int = 4,
-) -> Tuple[np.ndarray, Dict[str, Any]]:
+) -> np.ndarray:
     """
     Compute patch origin coordinates (level-0) inside a single contour.
 
     Returns:
         coords: (N, 2) int32 array of (x, y) in level-0 pixels
-        attrs:  dict with at least {"patch_size", "patch_level", "downsample",
-                                    "downsampled_level_dim", "level0_dim"}
     """
     # bounding box at level-0
     if contour is not None:
@@ -93,7 +91,7 @@ def process_contour(
 
     # degenerate after ROI
     if stop_x <= start_x or stop_y <= start_y:
-        return np.empty((0, 2), dtype=np.int32), {}
+        return np.empty((0, 2), dtype=np.int32)
 
     # choose/build contour checker
     if isinstance(contour_fn, str):
@@ -113,7 +111,7 @@ def process_contour(
     x_range = np.arange(start_x, stop_x, step=step_x, dtype=np.int32)
     y_range = np.arange(start_y, stop_y, step=step_y, dtype=np.int32)
     if x_range.size == 0 or y_range.size == 0:
-        return np.empty((0, 2), dtype=np.int32), {}
+        return np.empty((0, 2), dtype=np.int32)
 
     x_coords, y_coords = np.meshgrid(x_range, y_range, indexing="ij")
     coord_candidates = np.stack([x_coords.ravel(), y_coords.ravel()], axis=1)
@@ -127,23 +125,6 @@ def process_contour(
 
     coords = np.array([r for r in results if r is not None], dtype=np.int32)
     if coords.size == 0:
-        return np.empty((0, 2), dtype=np.int32), {}
+        return np.empty((0, 2), dtype=np.int32)
 
-    # attrs — keep flat and explicit (future-proof)
-    attrs: Dict[str, Any] = {
-        "patch_size":
-        int(patch_size),
-        "patch_level":
-        int(patch_level),
-        "downsample": (float(level_downsamples[patch_level][0]),
-                       float(level_downsamples[patch_level][1])),
-        "downsampled_level_dim":
-        tuple(map(int, wsi.level_dimensions[patch_level])),
-        "level0_dim":
-        tuple(map(int, wsi.level_dimensions[0])),
-        "coord_space":
-        "level0",
-        # optional extras you may add later: "mpp", "step_size", "version", "seed"
-    }
-
-    return coords.reshape(-1, 2), attrs
+    return coords.reshape(-1, 2)

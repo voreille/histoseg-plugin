@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import openslide
@@ -10,6 +10,7 @@ import openslide
 from ..storage.factory import build_tiling_store
 from ..storage.interfaces import TilingStore
 from ..storage.specs import TilingStoresSpec
+from ..wsi_core.geometry import compute_level_downsamples
 from ..wsi_core.segmentation import segment_tissue
 from ..wsi_core.stitch import stitch_coords
 from ..wsi_core.visualization import vis_wsi
@@ -146,10 +147,12 @@ def _too_large_for_seg(wsi, seg_level: int, px_limit: float = 1e8) -> bool:
 
 
 def process_single_wsi(
+    *,
     wsi_path: Union[str, Path],
     config: TilingConfig,
     store_spec: TilingStoresSpec,
-    *,
+    tile_rootdir: Union[str, Path],
+    slide_rootdir: Union[str, Path],
     generate_mask: bool = True,
     generate_patches: bool = True,
     generate_stitch: bool = True,
@@ -159,7 +162,10 @@ def process_single_wsi(
     Process one WSI and (optionally) produce: tissue mask, patch coordinates, and a stitched visualization.
     """
     tiling_store: TilingStore = build_tiling_store(
-        store_spec)  # generic writer
+        root_dir=Path(tile_rootdir),
+        slides_root=Path(slide_rootdir),
+        spec=store_spec,
+    )
     wsi_path = Path(wsi_path)
     slide_id = wsi_path.stem
 
@@ -248,11 +254,11 @@ def process_single_wsi(
                 wsi=wsi,
                 contours_tissue=contours_tissue,
                 holes_tissue=holes_tissue,
-                writer=tiling_store,
+                tiling_store=tiling_store,
                 patch_level=tile_level,
-                # pass through extra params; include step_size/patch_size, etc.
+                relative_wsi_path=wsi_path.relative_to(slide_rootdir)
+                if slide_rootdir is not None else wsi_path,
                 **patch_params,
-                # optional: propagate tile_mpp into attrs via kwargs if your processor accepts it
             )
         except Exception as e:
             raise PatchError(f"Patch extraction failed: {e}") from e
@@ -294,9 +300,6 @@ def process_single_wsi(
         tile_mpp=tile_mpp,
         mpp_within_tolerance=mpp_within_tolerance,
         mpp_reason=mpp_reason,
-        # mask_path=mask_path,
-        # patch_path=patch_path_str if generate_patches else None,
-        # stitch_path=stitch_path if generate_stitch else None,
     )
 
 
@@ -306,11 +309,12 @@ def process_contours(
     contours_tissue,
     holes_tissue,
     *,
-    writer: TilingStore,
+    tiling_store: TilingStore,
     patch_level: int = 0,
     patch_size: int = 256,
     step_size: int = 256,
     append: bool = True,
+    relative_wsi_path: Optional[Path] = None,
     **kwargs,
 ) -> Optional[str]:
     """
@@ -325,12 +329,32 @@ def process_contours(
     wrote_header = False
     log_chunk = max(1, int(n * 0.05))
 
+    level_downsamples = compute_level_downsamples(wsi)  # [(dx,dy), ...]
+    attrs = {
+        "patch_size":
+        int(patch_size),
+        "patch_level":
+        int(patch_level),
+        "downsample": (float(level_downsamples[patch_level][0]),
+                       float(level_downsamples[patch_level][1])),
+        "downsampled_level_dim":
+        tuple(map(int, wsi.level_dimensions[patch_level])),
+        "level0_dim":
+        tuple(map(int, wsi.level_dimensions[0])),
+        "coord_space":
+        "level0",
+        "relative_wsi_path":
+        str(relative_wsi_path),
+        "path_mpp":
+        float(_get_level_mpps(wsi)[patch_level]),
+    }
+
     for idx, cont in enumerate(contours_tissue):
         if (idx + 1) % log_chunk == 0:
             print(f"Processing contour {idx+1}/{n}")
 
         # Your process_contour returns (coords, attrs). Keep as-is, just shape/typing.
-        coords, attrs = process_contour(
+        coords = process_contour(
             wsi,
             cont,
             holes_tissue[idx],
@@ -347,10 +371,13 @@ def process_contours(
         cont_idx = np.full((coords.shape[0], ), idx, dtype=np.int32)
 
         if (not wrote_header) or (not append):
-            p = writer.save_coords(slide_id, coords, attrs, cont_idx=cont_idx)
+            p = tiling_store.save_coords(slide_id,
+                                         coords,
+                                         attrs,
+                                         cont_idx=cont_idx)
             final_path_str = str(p)
             wrote_header = True
         else:
-            writer.append_coords(slide_id, coords, cont_idx=cont_idx)
+            tiling_store.append_coords(slide_id, coords, cont_idx=cont_idx)
 
     return final_path_str

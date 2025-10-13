@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import threading
-from pathlib import Path
-from typing import Callable, Union
+from typing import Callable
 
 from ...storage.specs import TilingStoresSpec
-from ..parameter_models import TilingConfig
 from .domain import JobStatus, TilingJobCollection, TilingResult
 from .run_options import RunOptions
 from .store import JobStore
@@ -16,15 +14,12 @@ _store_lock = threading.Lock()
 
 def run_tiling_jobs(
     joblist: TilingJobCollection,
-    output_dir: Union[str, Path],
     *,
     job_store: JobStore | None,
     process_single_fn: Callable[..., TilingResult],
-    opts: RunOptions = RunOptions(),
+    opts: RunOptions,
     store_spec: TilingStoresSpec,
 ) -> TilingJobCollection:
-    output_dir = Path(output_dir)
-    # TODO: add or rm autoskip
 
     # normalize 'running' -> 'pending'
     joblist.normalize_for_resume()
@@ -42,12 +37,14 @@ def run_tiling_jobs(
         try:
             res = process_single_fn(
                 wsi_path=j.slide_path,
+                tile_rootdir=opts.tile_rootdir,
                 config=j.config,
                 store_spec=store_spec,
                 generate_mask=opts.generate_mask,
                 generate_patches=opts.generate_patches,
                 generate_stitch=opts.generate_stitch,
                 verbose=opts.verbose,
+                slide_rootdir=job_store.slides_root if job_store else None,
             )
             # MPP policy
             if opts.strict_mpp and not res.mpp_within_tolerance and j.config.resolution.level_mode == "auto":

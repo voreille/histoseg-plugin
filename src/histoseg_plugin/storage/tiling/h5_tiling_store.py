@@ -19,19 +19,23 @@ class H5TilingStore(BaseTilingStore):
 
     def __init__(
         self,
+        *,
+        root_dir: Path,
+        slides_root: Path,
         coords_dir: Path,
         masks_dir: Path,
         stitches_dir: Path,
-        *,
         compression: Optional[str] = None,
         mask_ext: str = ".png",
         stitch_ext: str = ".png",
     ):
-        self.super().__init__(coords_dir,
-                              masks_dir,
-                              stitches_dir,
-                              mask_ext=mask_ext,
-                              stitch_ext=stitch_ext)
+        super().__init__(slides_root=slides_root,
+                         root_dir=root_dir,
+                         coords_dir=coords_dir,
+                         masks_dir=masks_dir,
+                         stitches_dir=stitches_dir,
+                         mask_ext=mask_ext,
+                         stitch_ext=stitch_ext)
         self.comp = compression
 
     def coords_path(self, slide_id: str) -> Path:
@@ -143,3 +147,6 @@ class H5TilingStore(BaseTilingStore):
             cont_idx = cast(np.ndarray, cont_idx)
 
         return coords, cont_idx, attrs
+
+    def slide_ids(self) -> list[str]:
+        return [p.stem for p in self.coords_dir.glob("*.h5")]

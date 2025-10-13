@@ -1,11 +1,13 @@
 from __future__ import annotations
-from pathlib import Path
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
 class RunOptions:
+    slide_rootdir: Path 
+    tile_rootdir: Path
     generate_mask: bool = True
     generate_patches: bool = True
     generate_stitch: bool = True
@@ -14,7 +16,4 @@ class RunOptions:
     strict_mpp: bool = True  # if True, out-of-tolerance => FAILED
     max_workers: int = 4
     verbose: bool = True
-    mask_dir: Path = Path("masks")
-    patch_dir: Path = Path("patches")
-    stitch_dir: Path = Path("stitches")
     write_manifest: bool = True

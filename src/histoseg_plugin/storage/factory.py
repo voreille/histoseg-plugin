@@ -1,12 +1,17 @@
 from pathlib import Path
 
 from .interfaces import TilingStore
-from .specs import TilingStoresSpec
+from .specs import TilingStoresSpec, EmbeddingStoresSpec
 from .interfaces import EmbeddingStore
-from .embedding_store import H5EmbeddingStore, PtEmbeddingSink, MultiEmbeddingStore
 
 
-def build_tiling_store(spec: TilingStoresSpec) -> TilingStore:
+def build_tiling_store(
+    *,
+    spec: TilingStoresSpec,
+    root_dir: Path,
+    slides_root: Path,
+) -> TilingStore:
+    root_dir = Path(root_dir)
     coords_dir = Path(spec.coords_dir)
     masks_dir = Path(spec.masks_dir)
     stitches_dir = Path(spec.stitches_dir)
@@ -14,7 +19,9 @@ def build_tiling_store(spec: TilingStoresSpec) -> TilingStore:
 
     if kind == "h5":
         from .tiling.h5_tiling_store import H5TilingStore
-        return H5TilingStore(coords_dir=coords_dir,
+        return H5TilingStore(root_dir=root_dir,
+                             slides_root=slides_root,
+                             coords_dir=coords_dir,
                              masks_dir=masks_dir,
                              stitches_dir=stitches_dir,
                              compression=getattr(spec.compression,
@@ -23,7 +30,9 @@ def build_tiling_store(spec: TilingStoresSpec) -> TilingStore:
                              stitch_ext=spec.stitch_ext)
     elif kind == "json":
         from .tiling.json_tiling_store import JSONTilingStore
-        return JSONTilingStore(coords_dir=coords_dir,
+        return JSONTilingStore(root_dir=root_dir,
+                               slides_root=slides_root,
+                               coords_dir=coords_dir,
                                masks_dir=masks_dir,
                                stitches_dir=stitches_dir,
                                mask_ext=spec.mask_ext,
@@ -32,24 +41,32 @@ def build_tiling_store(spec: TilingStoresSpec) -> TilingStore:
         raise ValueError(f"Unknown coords kind: {kind}")
 
 
-# def build_embedding_store(spec) -> EmbeddingStore:
-#     sinks_cfg = spec.embedding.features.sinks
-#     primary = None
-#     extras = []
-#     for s in sinks_cfg:
-#         kind = s.kind.lower()
-#         if kind == "h5":
-#             store = H5EmbeddingStore(dir=s.dir,
-#                                      compression=getattr(
-#                                          s, "compression", None))
-#         elif kind == "pt":
-#             store = PtEmbeddingSink(dir=s.dir, source_h5_dir=s.source_h5_dir)
-#         else:
-#             raise ValueError(f"Unknown embedding sink kind: {kind}")
+def build_tiling_store_from_dir(
+    *,
+    root_dir: Path,
+    slides_root: Path,
+) -> TilingStore:
+    spec = TilingStoresSpec.from_json(root_dir / ".tiling_store.json")
+    return build_tiling_store(spec=spec,
+                              root_dir=root_dir,
+                              slides_root=slides_root)
 
-#         if getattr(s, "primary", False) or primary is None:
-#             primary = store
-#         else:
-#             extras.append(store)
-#     assert primary is not None, "At least one embedding sink (primary) is required"
-#     return MultiEmbeddingStore(primary, extras)
+
+def build_embedding_store(
+    *,
+    spec: EmbeddingStoresSpec,
+    slides_root: Path,
+    root_dir: Path,
+) -> EmbeddingStore:
+    if spec.kind.lower() == "h5":
+        from .embedding.h5_embedding_store import H5EmbeddingStore
+        return H5EmbeddingStore(
+            root_dir=root_dir,
+            features_dir=spec.features_dir,
+            slides_root=slides_root,
+            compression=getattr(spec.compression, "compression", None),
+            pt_dir=spec.pt_dir,
+        )
+
+    else:
+        raise ValueError(f"Unknown embedding kind: {spec.kind}")
