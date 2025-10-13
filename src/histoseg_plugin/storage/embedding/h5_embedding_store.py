@@ -110,7 +110,7 @@ class H5EmbeddingStore(EmbeddingStore):
             {
                 "features": torch.from_numpy(feats),
                 "coords": torch.from_numpy(coords),
-                "meta": attrs,
+                "attrs": attrs,
             },
             out,
         )

@@ -59,12 +59,11 @@ src/histoseg_plugin/
 │   └── process_wsi.py        # Single‑slide processing pipeline
 │
 ├── storage/                  # File I/O and HDF5 management
-│   ├── config.py
-│   ├── factory.py
+│   ├── config.py             # Pydantic configuration models
+│   ├── factory.py            # Store builders with config injection
 │   ├── fs_writer.py          # Atomic writes (.part → final)
 │   ├── h5_store.py
-│   ├── interfaces.py         # TilingWriter interface
-│   └── specs.py
+│   └── interfaces.py         # TilingWriter interface
 │
 ├── wsi_core/                 # OpenSlide & visualization utilities
 │   ├── annotations.py
@@ -168,21 +167,25 @@ Key parameters live in `tiling/parameter_models.py` and map directly to the pipe
 
 Core entrypoint:
 ```python
+```python
 from histoseg_plugin.tiling.process_wsi import process_single_wsi
-from histoseg_plugin.storage.specs import TilingStoresSpec
+from histoseg_plugin.storage.config import TilingStoreConfig
+
+# Load storage configuration
+store_config = TilingStoreConfig.from_yaml("configs/storage.yaml", root_key="tiling")
 
 result = process_single_wsi(
     wsi_path="/path/slide.svs",
-    masks_dir="/results/masks",
-    patches_dir="/results/patches",
-    stitches_dir="/results/stitches",
+    tile_rootdir="/results",
+    slide_rootdir="/path/to/slides",
     config=my_config,                       # Pydantic TilingConfig
-    store_spec=TilingStoresSpec.fs_default("/results"),
+    store_config=store_config,
     generate_mask=True,
     generate_patches=True,
     generate_stitch=True,
     verbose=True,
 )
+```
 print(result)
 ```
 

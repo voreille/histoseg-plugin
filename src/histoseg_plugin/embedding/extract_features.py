@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from ..storage.factory import build_embedding_store, build_tiling_store_from_dir
-from ..storage.specs import EmbeddingStoresSpec
+from ..storage.config import EmbeddingStoreConfig
 from .datasets import WholeSlidePatch
 from .encoders import get_encoder
 
@@ -74,7 +74,7 @@ def main(
     export_pt: bool,
 ):
     # Build stores from config + runtime roots
-    embedding_store_spec = EmbeddingStoresSpec.from_yaml(
+    embedding_store_config = EmbeddingStoreConfig.from_yaml(
         path=DEFAULT_STORAGE_CFG,
         root_key="embedding",
     )
@@ -83,7 +83,7 @@ def main(
         slides_root=slides_rootdir,
     )
     embedding_store = build_embedding_store(
-        spec=embedding_store_spec,
+        config=embedding_store_config,
         slides_root=slides_rootdir,
         root_dir=output_dir,
     )

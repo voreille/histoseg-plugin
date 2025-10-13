@@ -9,7 +9,7 @@ import openslide
 
 from ..storage.factory import build_tiling_store
 from ..storage.interfaces import TilingStore
-from ..storage.specs import TilingStoresSpec
+from ..storage.config import TilingStoreConfig
 from ..wsi_core.geometry import compute_level_downsamples
 from ..wsi_core.segmentation import segment_tissue
 from ..wsi_core.stitch import stitch_coords
@@ -150,7 +150,7 @@ def process_single_wsi(
     *,
     wsi_path: Union[str, Path],
     config: TilingConfig,
-    store_spec: TilingStoresSpec,
+    store_config: TilingStoreConfig,
     tile_rootdir: Union[str, Path],
     slide_rootdir: Union[str, Path],
     generate_mask: bool = True,
@@ -164,7 +164,7 @@ def process_single_wsi(
     tiling_store: TilingStore = build_tiling_store(
         root_dir=Path(tile_rootdir),
         slides_root=Path(slide_rootdir),
-        spec=store_spec,
+        config=store_config,
     )
     wsi_path = Path(wsi_path)
     slide_id = wsi_path.stem
@@ -345,7 +345,7 @@ def process_contours(
         "level0",
         "relative_wsi_path":
         str(relative_wsi_path),
-        "path_mpp":
+        "patch_mpp":
         float(_get_level_mpps(wsi)[patch_level]),
     }
 

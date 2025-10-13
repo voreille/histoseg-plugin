@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from typing import Callable
 
-from ...storage.specs import TilingStoresSpec
+from ...storage.config import TilingStoreConfig
 from .domain import JobStatus, TilingJobCollection, TilingResult
 from .run_options import RunOptions
 from .store import JobStore
@@ -18,7 +18,7 @@ def run_tiling_jobs(
     job_store: JobStore | None,
     process_single_fn: Callable[..., TilingResult],
     opts: RunOptions,
-    store_spec: TilingStoresSpec,
+    store_config: TilingStoreConfig,
 ) -> TilingJobCollection:
 
     # normalize 'running' -> 'pending'
@@ -39,7 +39,7 @@ def run_tiling_jobs(
                 wsi_path=j.slide_path,
                 tile_rootdir=opts.tile_rootdir,
                 config=j.config,
-                store_spec=store_spec,
+                store_config=store_config,
                 generate_mask=opts.generate_mask,
                 generate_patches=opts.generate_patches,
                 generate_stitch=opts.generate_stitch,

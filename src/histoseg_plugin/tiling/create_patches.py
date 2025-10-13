@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import click
 
-from ..storage.specs import TilingStoresSpec
+from ..storage.config import TilingStoreConfig
 from .config_ops import load_config_with_presets
 from .jobs.factory import jobs_from_dir, jobs_from_yaml
 from .jobs.run_options import RunOptions
@@ -77,8 +78,8 @@ def main(
 ):
     # Load + merge configs (default then each preset in order)
     cfg: TilingConfig = load_config_with_presets(config)
-    store_spec = TilingStoresSpec.from_yaml(path=DEFAULT_STORAGE_CFG,
-                                            root_key="tiling")
+    store_config = TilingStoreConfig.from_yaml(path=DEFAULT_STORAGE_CFG,
+                                               root_key="tiling")
 
     # Parse extensions
     file_extensions = tuple(ext.strip() for ext in extensions.split(","))
@@ -100,10 +101,11 @@ def main(
 
     # Prepare output
     output.mkdir(parents=True, exist_ok=True)
-    store_spec.to_json(output / ".tiling_store.json")
+    (output / ".tiling_store.json").write_text(
+        json.dumps(store_config.model_dump(mode='json'), indent=2))
 
     if not no_manifest:
-        (output / "manifest.yaml").write_text(
+        (output / "tiling_manifest.yaml").write_text(
             cfg.model_dump_json(indent=2).replace("true", "true").replace(
                 "false", "false"))
 
@@ -114,7 +116,7 @@ def main(
         click.echo(cfg.model_dump_json(indent=2))
         click.echo()
 
-    job_store = YamlJobStore(path=output / "jobs.yaml", slides_root=source)
+    job_store = YamlJobStore(path=output / "tiling_jobs.yaml", slides_root=source)
     # Run
     try:
         joblist = run_tiling_jobs(
@@ -131,7 +133,7 @@ def main(
                 verbose=not quiet,
                 write_manifest=not no_manifest,
             ),
-            store_spec=store_spec,
+            store_config=store_config,
         )
     except Exception as e:
         click.echo(f"Error during processing: {e}", err=True)
