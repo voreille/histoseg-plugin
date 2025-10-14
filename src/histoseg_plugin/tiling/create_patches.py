@@ -100,6 +100,7 @@ def main(
             click.echo(f"Found {len(joblist.jobs)} WSI files in {source}")
 
     # Prepare output
+    output = output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     (output / ".tiling_store.json").write_text(
         json.dumps(store_config.model_dump(mode='json'), indent=2))

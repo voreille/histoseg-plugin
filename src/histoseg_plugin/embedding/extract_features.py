@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import gc
+import shutil
 from contextlib import nullcontext
 from pathlib import Path
-import shutil
 
 import click
 import numpy as np
@@ -83,6 +84,11 @@ def main(
     export_pt: bool,
 ):
     # Build stores from config + runtime roots
+    tiles_rootdir = tiles_rootdir.resolve()
+    slides_rootdir = slides_rootdir.resolve()
+    output_dir = output_dir.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     embedding_store_config = EmbeddingStoreConfig.from_yaml(
         path=DEFAULT_STORAGE_CFG,
         root_key="embedding",
@@ -124,9 +130,18 @@ def main(
         if (use_amp and device.type == "cuda" and dtype is not None) else
         nullcontext())
 
+    n_removed = embedding_store.cleanup_incomplete()
+    if n_removed > 0:
+        click.echo(f"Removed {n_removed} incomplete .part files.")
+
     for slide_id in tqdm(sorted(tiling_store.slide_ids()),
                          desc="Slides",
                          unit="slide"):
+
+        if (not no_auto_skip and embedding_store.status(slide_id) == "final"):
+            tqdm.write(f"Skipping {slide_id} (already done)")
+            continue
+
         coords, _, attrs = tiling_store.load_coords(slide_id)
 
         # If you stored 'wsi_relpath' or 'wsi_basename' in attrs, consider:
@@ -137,34 +152,36 @@ def main(
         tile_level = int(attrs["patch_level"])
         tile_size = int(attrs["patch_size"])
 
-        ds = WholeSlidePatch(
-            coords,
-            wsi_path=slide_path,
-            tile_level=tile_level,
-            tile_size=tile_size,
-            transform=tx,
-        )
-        loader = DataLoader(ds,
-                            batch_size=batch_size,
-                            shuffle=False,
-                            **loader_kwargs)
+        with WholeSlidePatch(
+                coords,
+                wsi_path=slide_path,
+                tile_level=tile_level,
+                tile_size=tile_size,
+                transform=tx,
+        ) as ds:
+            loader = DataLoader(ds,
+                                batch_size=batch_size,
+                                shuffle=False,
+                                **loader_kwargs)
 
-        embedding_store.begin_slide(slide_id, dim=out_dim, attrs=attrs)
+            embedding_store.begin_slide(slide_id, dim=out_dim, attrs=attrs)
 
-        with torch.inference_mode():
-            for batch in tqdm(loader,
-                              desc=f"Embedding {slide_id}",
-                              leave=False):
-                imgs = batch["img"].to(device, non_blocking=True)
-                batch_coords = batch["coord"].numpy().astype(np.int32)
+            with torch.inference_mode():
+                for batch in tqdm(loader,
+                                  desc=f"Embedding {slide_id}",
+                                  leave=False):
+                    imgs = batch["img"].to(device, non_blocking=True)
+                    batch_coords = batch["coord"].numpy().astype(np.int32)
 
-                with autocast:
-                    feats = model(imgs)
+                    with autocast:
+                        feats = model(imgs)
 
-                feats = feats.to(torch.float32).cpu().numpy()
-                embedding_store.append_batch(slide_id, feats, batch_coords)
+                    feats = feats.to(torch.float32).cpu().numpy()
+                    embedding_store.append_batch(slide_id, feats, batch_coords)
 
-        embedding_store.finalize_slide(slide_id)
+            embedding_store.finalize_slide(slide_id)
+            del loader
+            gc.collect()
 
         if export_pt:
             pt_dir = output_dir / "pt_files"

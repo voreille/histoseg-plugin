@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol, Tuple
+from typing import Any, Dict, Optional, Protocol, Tuple, Literal
 
 import numpy as np
 from PIL import Image
@@ -55,6 +55,13 @@ class EmbeddingStore(Protocol):
 
     slides_root: Path
     root_dir: Path
+
+    def cleanup_incomplete(self) -> int:
+        ...
+
+    def status(self,
+               slide_id: str) -> Literal["absent", "partial", "final", "both"]:
+        ...
 
     def begin_slide(self, slide_id: str, *, dim: int,
                     attrs: Dict[str, Any]) -> None:
