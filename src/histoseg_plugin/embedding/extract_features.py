@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from pathlib import Path
+import shutil
 
 import click
 import numpy as np
@@ -9,10 +10,10 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from ..storage.factory import build_embedding_store, build_tiling_store_from_dir
+from ..models.hub import load_model
 from ..storage.config import EmbeddingStoreConfig
+from ..storage.factory import build_embedding_store, build_tiling_store_from_dir
 from .datasets import WholeSlidePatch
-from .encoders import get_encoder
 
 project_dir = Path(__file__).resolve().parents[3]
 DEFAULT_CFG = project_dir / "configs" / "embedding.yaml"
@@ -34,6 +35,12 @@ DEFAULT_STORAGE_CFG = project_dir / "configs" / "storage.yaml"
     help="Directory containing the raw WSIs.",
 )
 @click.option(
+    "--model-dir",
+    type=click.Path(path_type=Path, exists=True, file_okay=False),
+    required=False,
+    help="Directory containing the model files.",
+)
+@click.option(
     "--output-dir",
     type=click.Path(path_type=Path),
     required=True,
@@ -53,8 +60,9 @@ DEFAULT_STORAGE_CFG = project_dir / "configs" / "storage.yaml"
     help="Process even if .pt already exists.",
 )
 @click.option(
-    "--use-amp",
+    "--use-amp/--no-use-amp",
     is_flag=True,
+    default=True,
     help="Use autocast on CUDA for speed.",
 )
 @click.option(
@@ -64,6 +72,7 @@ DEFAULT_STORAGE_CFG = project_dir / "configs" / "storage.yaml"
 def main(
     tiles_rootdir: Path,
     slides_rootdir: Path,
+    model_dir: Path,
     output_dir: Path,
     model_name: str,
     batch_size: int,
@@ -89,9 +98,20 @@ def main(
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, tx, out_dim = get_encoder(model_name,
-                                     target_img_size=target_patch_size)
+    if model_dir is not None:
+        model, tx, out_dim, dtype, meta = load_model(model_dir, device="cuda")
+    else:
+        model, tx, out_dim, dtype, meta = load_model("test_resnet50",
+                                                     device="cuda")
     model.eval().to(device)
+
+    # Saving model files for provenance
+    out_model_dir = output_dir / "model"
+    out_model_dir.mkdir(parents=True, exist_ok=True)
+    if "loader_py_path" in meta:
+        shutil.copy2(meta["loader_py_path"], out_model_dir / "load.py")
+    if "model_yaml_path" in meta:
+        shutil.copy2(meta["model_yaml_path"], out_model_dir / "model.yaml")
 
     loader_kwargs = {
         "num_workers": num_workers,
@@ -100,8 +120,9 @@ def main(
     }
 
     autocast = (
-        torch.amp.autocast("cuda")  # type: ignore[attr-defined]
-        if (use_amp and device.type == "cuda") else nullcontext())
+        torch.amp.autocast("cuda", dtype=dtype)  # type: ignore[attr-defined]
+        if (use_amp and device.type == "cuda" and dtype is not None) else
+        nullcontext())
 
     for slide_id in tqdm(sorted(tiling_store.slide_ids()),
                          desc="Slides",
@@ -140,7 +161,7 @@ def main(
                 with autocast:
                     feats = model(imgs)
 
-                feats = feats.detach().cpu().numpy().astype(np.float32)
+                feats = feats.to(torch.float32).cpu().numpy()
                 embedding_store.append_batch(slide_id, feats, batch_coords)
 
         embedding_store.finalize_slide(slide_id)

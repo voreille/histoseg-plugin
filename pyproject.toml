@@ -39,5 +39,8 @@ embed-cpu = [
 [project.scripts]
 histoseg-process = "histoseg_plugin.tiling.create_patches:main"
 
+[project.entry-points."histoseg_plugin.models"]
+test_resnet50 = "histoseg_plugin.models.builtin.test_resnet50.load:load"
+
 [tool.setuptools.packages.find]
 where = ["src"]

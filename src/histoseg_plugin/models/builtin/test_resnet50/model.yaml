@@ -1,0 +1,10 @@
+schema_version: 1
+name: resnet50
+entrypoint: load:load     # call load() from load.py in same folder
+output:
+  embedding_dim: 2048
+constraints:
+  dynamic_img_size: false
+  multiple_of: 224
+defaults:
+  autocast: bfloat16
