@@ -122,7 +122,7 @@ def main(
     loader_kwargs = {
         "num_workers": num_workers,
         "pin_memory": device.type == "cuda",
-        "persistent_workers": num_workers > 0,
+        "persistent_workers": False,
     }
 
     autocast = (
