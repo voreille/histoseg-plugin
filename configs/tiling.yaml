@@ -6,8 +6,8 @@ resolution:
   level_policy: "closest" # options: "closest", "lower", "higher", "exact"
 
 grid:
-  tile_size: 256
-  step_size: 256
+  tile_size: 224
+  step_size: 224
 
 seg_params:
   seg_level: -1

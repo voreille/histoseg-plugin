@@ -256,6 +256,8 @@ def process_single_wsi(
                 holes_tissue=holes_tissue,
                 tiling_store=tiling_store,
                 patch_level=tile_level,
+                patch_size=config.grid.tile_size,
+                step_size=config.grid.step_size,
                 relative_wsi_path=wsi_path.relative_to(slide_rootdir)
                 if slide_rootdir is not None else wsi_path,
                 **patch_params,
@@ -310,9 +312,9 @@ def process_contours(
     holes_tissue,
     *,
     tiling_store: TilingStore,
-    patch_level: int = 0,
-    patch_size: int = 256,
-    step_size: int = 256,
+    patch_level: int,
+    patch_size: int,
+    step_size: int,
     append: bool = True,
     relative_wsi_path: Optional[Path] = None,
     **kwargs,
@@ -333,6 +335,8 @@ def process_contours(
     attrs = {
         "patch_size":
         int(patch_size),
+        "step_size":
+        int(step_size),
         "patch_level":
         int(patch_level),
         "downsample": (float(level_downsamples[patch_level][0]),

@@ -1,7 +1,7 @@
 tiling:
   coords:
-    kind: h5
-    dir: patches_h5/
+    kind: json
+    dir: patches_json/
   stitches:
     dir: stitches/
   masks:
