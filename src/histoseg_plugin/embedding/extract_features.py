@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+import json
 import shutil
 from contextlib import nullcontext
 from pathlib import Path
@@ -102,6 +103,9 @@ def main(
         slides_root=slides_rootdir,
         root_dir=output_dir,
     )
+
+    (output_dir / ".embedding_store.json").write_text(
+        json.dumps(embedding_store_config.model_dump(mode='json'), indent=2))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if model_dir is not None:

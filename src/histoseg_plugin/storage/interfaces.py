@@ -80,3 +80,6 @@ class EmbeddingStore(Protocol):
 
     def export_to_pt(self, slide_id: str, pt_dir: Path) -> Path:
         ...
+
+    def slide_ids(self) -> list[str]:
+        ...

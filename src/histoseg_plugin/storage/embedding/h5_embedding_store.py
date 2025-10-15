@@ -203,3 +203,6 @@ class H5EmbeddingStore(EmbeddingStore):
             out,
         )
         return out
+
+    def slide_ids(self) -> list[str]:
+        return [p.stem for p in self.features_dir.glob("*.h5")]
