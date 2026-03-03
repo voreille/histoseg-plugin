@@ -50,7 +50,6 @@ def tissue_contours(req: TissueContoursRequest) -> GeoJSONFeatureCollection:
 
     with open_wsi(slide_path) as wsi:
         seg_level = normalize_seg_level(req.seg_level, wsi.level_count)
-        downsample = float(wsi.level_downsamples[seg_level])
 
         # If you want: only catch expected errors here; otherwise let it raise
         try:
@@ -72,17 +71,18 @@ def tissue_contours(req: TissueContoursRequest) -> GeoJSONFeatureCollection:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"segment_tissue failed: {e}")
 
+    # TODO: add more properties like the params for tissue segmentation
     props = {
         "class": "tissue",
-        "seg_level": seg_level,
-        "downsample": downsample,
+        "seg_level_used": seg_level,
+        "coords_space": "level0",
         "slide_uri": req.slide_uri,
+        "algorithm": "segment_tissue_v1",
     }
-
     features = contours_to_geojson_features(
         contours=contours,
         holes=holes,
-        downsample=downsample,
+        downsample=1.0,
         props=props,
         min_area_px_level0=req.min_area_px_level0,
     )
