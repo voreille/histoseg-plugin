@@ -71,7 +71,6 @@ def tissue_contours(req: TissueContoursRequest) -> GeoJSONFeatureCollection:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"segment_tissue failed: {e}")
 
-    # TODO: add more properties like the params for tissue segmentation
     props = {
         "class": "tissue",
         "seg_level_used": seg_level,

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
+
 from pydantic import BaseModel, Field
 
 
-class TissueContoursRequest(BaseModel):
+class TissueSegmentationParams(BaseModel):
     slide_uri: str = Field(..., description="file:/... or file:///... or absolute path")
-    seg_level: int = -1 
+    seg_level: int = -1
 
     sthresh: int = 20
     sthresh_up: int = 255
@@ -22,22 +23,53 @@ class TissueContoursRequest(BaseModel):
     exclude_ids: Optional[List[int]] = None
     keep_ids: Optional[List[int]] = None
 
-    # geojson post options (MVP)
     min_area_px_level0: int = 0
     simplify_tol_px_level0: float = 0.0
 
 
-class GeoJSONGeometry(BaseModel):
+class TissueContoursRequest(TissueSegmentationParams):
+    pass
+
+
+class WSISegmentationRequest(TissueSegmentationParams):
+    patch_level: int = 0
+    patch_size: int = 512
+    step_size: int = 512
+
+    contour_fn: str = "four_pt"
+    center_shift: float = 0.5
+    use_padding: bool = True
+    top_left: Optional[List[int]] = None
+    bot_right: Optional[List[int]] = None
+    max_workers: int = 4  # for the tiling
+
+    output_target_mpp: float = 4.0
+    batch_size: int = 16
+    num_workers: int = 0
+
+
+class PolygonGeometry(BaseModel):
     type: Literal["Polygon"]
-    coordinates: List[List[List[float]]]  # [[[x,y], ...]]
+    coordinates: List[List[List[float]]]
+
+
+class MultiPolygonGeometry(BaseModel):
+    type: Literal["MultiPolygon"]
+    coordinates: List[List[List[List[float]]]]
 
 
 class GeoJSONFeature(BaseModel):
     type: Literal["Feature"] = "Feature"
     properties: Dict[str, Any] = Field(default_factory=dict)
-    geometry: GeoJSONGeometry
+    geometry: Union[PolygonGeometry, MultiPolygonGeometry]
 
 
 class GeoJSONFeatureCollection(BaseModel):
     type: Literal["FeatureCollection"] = "FeatureCollection"
     features: List[GeoJSONFeature]
+
+
+class WSISegmentationResponse(BaseModel):
+    coords_space: Literal["level0"] = "level0"
+    tissue: GeoJSONFeatureCollection
+    outputs: Dict[str, GeoJSONFeatureCollection]
