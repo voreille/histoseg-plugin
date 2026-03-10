@@ -11,6 +11,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.LinearRing;
+import org.locationtech.jts.geom.MultiPolygon;
+import org.locationtech.jts.geom.Polygon;
+
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -21,7 +28,6 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextInputDialog;
-import qupath.lib.geom.Point2;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.extensions.QuPathExtension;
 import qupath.lib.images.servers.ImageServer;
@@ -29,7 +35,7 @@ import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjects;
 import qupath.lib.objects.classes.PathClass;
 import qupath.lib.regions.ImagePlane;
-import qupath.lib.roi.ROIs;
+import qupath.lib.roi.GeometryTools;
 import qupath.lib.roi.interfaces.ROI;
 
 public class HistoSegExtension implements QuPathExtension {
@@ -38,6 +44,8 @@ public class HistoSegExtension implements QuPathExtension {
 
     private static final String TISSUE_ENDPOINT = "/segment/tissue";
     private static final String WSI_SEGMENTATION_ENDPOINT = "/segment/wsi";
+
+    private static final GeometryFactory GEOMETRY_FACTORY = new GeometryFactory();
 
     @Override
     public void installExtension(QuPathGUI qupath) {
@@ -60,24 +68,6 @@ public class HistoSegExtension implements QuPathExtension {
     @Override
     public String getDescription() {
         return "Call a FastAPI server to compute tissue and WSI segmentation and import as annotations.";
-    }
-
-    private static void showError(String title, String message) {
-        Alert alert = new Alert(AlertType.ERROR);
-        alert.setTitle(title);
-        alert.setHeaderText(title);
-        alert.setContentText(message);
-        alert.showAndWait();
-    }
-
-    private static Optional<String> askServerUrl() {
-        TextInputDialog dlg = new TextInputDialog(DEFAULT_SERVER);
-        dlg.setTitle("HistoSeg");
-        dlg.setHeaderText("FastAPI server URL (use SSH tunnel to localhost)");
-        dlg.setContentText("Server URL:");
-        return dlg.showAndWait()
-                .map(String::trim)
-                .map(url -> url.endsWith("/") ? url.substring(0, url.length() - 1) : url);
     }
 
     private void runTissueSegmentation(QuPathGUI qupath) {
@@ -108,11 +98,7 @@ public class HistoSegExtension implements QuPathExtension {
                 String responseBody = postJson(serverUrl + TISSUE_ENDPOINT, payload.toString());
                 List<PathObject> objects = featureCollectionStringToAnnotations(responseBody, "Tissue");
 
-                Platform.runLater(() -> {
-                    var hierarchy = imageData.getHierarchy();
-                    hierarchy.addObjects(objects);
-                    hierarchy.fireHierarchyChangedEvent(this);
-                });
+                Platform.runLater(() -> addObjectsToHierarchy(imageData, objects));
             } catch (Exception ex) {
                 Platform.runLater(() -> showError("HistoSeg", ex.toString()));
             }
@@ -147,15 +133,39 @@ public class HistoSegExtension implements QuPathExtension {
                 String responseBody = postJson(serverUrl + WSI_SEGMENTATION_ENDPOINT, payload.toString());
                 List<PathObject> objects = parseWSISegmentationResponse(responseBody);
 
-                Platform.runLater(() -> {
-                    var hierarchy = imageData.getHierarchy();
-                    hierarchy.addObjects(objects);
-                    hierarchy.fireHierarchyChangedEvent(this);
-                });
+                Platform.runLater(() -> addObjectsToHierarchy(imageData, objects));
             } catch (Exception ex) {
                 Platform.runLater(() -> showError("HistoSeg", ex.toString()));
             }
         }, "HistoSeg-WSI").start();
+    }
+
+    private static void addObjectsToHierarchy(qupath.lib.images.ImageData<?> imageData, List<PathObject> objects) {
+        if (objects == null || objects.isEmpty()) {
+            return;
+        }
+        var hierarchy = imageData.getHierarchy();
+        hierarchy.addObjects(objects);
+        hierarchy.fireHierarchyChangedEvent(HistoSegExtension.class);
+    }
+
+    private static void showError(String title, String message) {
+        Alert alert = new Alert(AlertType.ERROR);
+        alert.setTitle(title);
+        alert.setHeaderText(title);
+        alert.setContentText(message);
+        alert.showAndWait();
+    }
+
+    private static Optional<String> askServerUrl() {
+        TextInputDialog dlg = new TextInputDialog(DEFAULT_SERVER);
+        dlg.setTitle("HistoSeg");
+        dlg.setHeaderText("FastAPI server URL (use SSH tunnel to localhost)");
+        dlg.setContentText("Server URL:");
+        return dlg.showAndWait()
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .map(url -> url.endsWith("/") ? url.substring(0, url.length() - 1) : url);
     }
 
     private static JsonObject buildTissuePayload(String slideUri) {
@@ -183,26 +193,7 @@ public class HistoSegExtension implements QuPathExtension {
     }
 
     private static JsonObject buildWSISegmentationPayload(String slideUri) {
-        JsonObject payload = new JsonObject();
-
-        payload.addProperty("slide_uri", slideUri);
-        payload.addProperty("seg_level", -1);
-
-        payload.addProperty("sthresh", 20);
-        payload.addProperty("sthresh_up", 255);
-        payload.addProperty("mthresh", 7);
-        payload.addProperty("close", 0);
-        payload.addProperty("use_otsu", false);
-
-        JsonObject filterParams = new JsonObject();
-        filterParams.addProperty("a_t", 100);
-        filterParams.addProperty("a_h", 16);
-        filterParams.addProperty("max_n_holes", 10);
-        payload.add("filter_params", filterParams);
-
-        payload.addProperty("ref_patch_size", 512);
-        payload.addProperty("min_area_px_level0", 0);
-        payload.addProperty("simplify_tol_px_level0", 0.0);
+        JsonObject payload = buildTissuePayload(slideUri);
 
         payload.addProperty("patch_level", 0);
         payload.addProperty("patch_size", 896);
@@ -225,9 +216,9 @@ public class HistoSegExtension implements QuPathExtension {
             return null;
         }
 
-        for (URI u : uris) {
-            if ("file".equalsIgnoreCase(u.getScheme())) {
-                return u.toString();
+        for (URI uri : uris) {
+            if ("file".equalsIgnoreCase(uri.getScheme())) {
+                return uri.toString();
             }
         }
         return uris.iterator().next().toString();
@@ -247,12 +238,13 @@ public class HistoSegExtension implements QuPathExtension {
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
 
-        HttpResponse<String> resp = client.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
 
-        if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
-            throw new RuntimeException("Server error " + resp.statusCode() + ": " + resp.body());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new RuntimeException("Server error " + response.statusCode() + ": " + response.body());
         }
-        return resp.body();
+
+        return response.body();
     }
 
     private static List<PathObject> parseWSISegmentationResponse(String json) {
@@ -260,8 +252,7 @@ public class HistoSegExtension implements QuPathExtension {
         List<PathObject> objects = new ArrayList<>();
 
         if (root.has("tissue") && root.get("tissue").isJsonObject()) {
-            JsonObject tissueFc = root.getAsJsonObject("tissue");
-            objects.addAll(featureCollectionObjectToAnnotations(tissueFc, "Tissue"));
+            objects.addAll(featureCollectionObjectToAnnotations(root.getAsJsonObject("tissue"), "Tissue"));
         }
 
         if (root.has("outputs") && root.get("outputs").isJsonObject()) {
@@ -270,8 +261,7 @@ public class HistoSegExtension implements QuPathExtension {
                 if (!entry.getValue().isJsonObject()) {
                     continue;
                 }
-                JsonObject fc = entry.getValue().getAsJsonObject();
-                objects.addAll(featureCollectionObjectToAnnotations(fc, null));
+                objects.addAll(featureCollectionObjectToAnnotations(entry.getValue().getAsJsonObject(), null));
             }
         }
 
@@ -283,85 +273,38 @@ public class HistoSegExtension implements QuPathExtension {
         return featureCollectionObjectToAnnotations(root, fallbackClassName);
     }
 
-    private static List<PathObject> featureCollectionObjectToAnnotations(JsonObject featureCollection,
-            String fallbackClassName) {
+    private static List<PathObject> featureCollectionObjectToAnnotations(
+            JsonObject featureCollection,
+            String fallbackClassName
+    ) {
         List<PathObject> objects = new ArrayList<>();
 
-        if (!featureCollection.has("features") || !featureCollection.get("features").isJsonArray()) {
+        if (featureCollection == null || !featureCollection.has("features") || !featureCollection.get("features").isJsonArray()) {
             return objects;
         }
 
         JsonArray features = featureCollection.getAsJsonArray("features");
         ImagePlane plane = ImagePlane.getDefaultPlane();
 
-        for (JsonElement featEl : features) {
-            if (!featEl.isJsonObject()) {
+        for (JsonElement featureElement : features) {
+            if (!featureElement.isJsonObject()) {
                 continue;
             }
 
-            JsonObject feat = featEl.getAsJsonObject();
-            if (!feat.has("geometry") || !feat.get("geometry").isJsonObject()) {
+            JsonObject feature = featureElement.getAsJsonObject();
+            JsonObject geometryObject = getObject(feature, "geometry");
+            if (geometryObject == null) {
                 continue;
             }
 
-            JsonObject geom = feat.getAsJsonObject("geometry");
-            String type = geom.has("type") ? geom.get("type").getAsString() : "";
-            String className = extractClassName(feat, fallbackClassName);
-
-            if ("Polygon".equalsIgnoreCase(type)) {
-                objects.addAll(polygonGeometryToAnnotations(geom, className, plane));
-            } else if ("MultiPolygon".equalsIgnoreCase(type)) {
-                objects.addAll(multiPolygonGeometryToAnnotations(geom, className, plane));
-            }
-        }
-
-        return objects;
-    }
-
-    private static String extractClassName(JsonObject feature, String fallbackClassName) {
-        String className = fallbackClassName;
-        if (feature.has("properties") && feature.get("properties").isJsonObject()) {
-            JsonObject props = feature.getAsJsonObject("properties");
-            if (props.has("class") && !props.get("class").isJsonNull()) {
-                className = props.get("class").getAsString();
-            }
-        }
-        return className;
-    }
-
-    private static List<PathObject> polygonGeometryToAnnotations(JsonObject geom, String className, ImagePlane plane) {
-        List<PathObject> objects = new ArrayList<>();
-
-        if (!geom.has("coordinates") || !geom.get("coordinates").isJsonArray()) {
-            return objects;
-        }
-
-        JsonArray rings = geom.getAsJsonArray("coordinates");
-        ROI roi = polygonRingsToROI(rings, plane);
-        if (roi == null) {
-            return objects;
-        }
-
-        objects.add(createAnnotationObject(roi, className));
-        return objects;
-    }
-
-    private static List<PathObject> multiPolygonGeometryToAnnotations(JsonObject geom, String className,
-            ImagePlane plane) {
-        List<PathObject> objects = new ArrayList<>();
-
-        if (!geom.has("coordinates") || !geom.get("coordinates").isJsonArray()) {
-            return objects;
-        }
-
-        JsonArray polygons = geom.getAsJsonArray("coordinates");
-        for (JsonElement polyEl : polygons) {
-            if (!polyEl.isJsonArray()) {
+            String className = extractClassName(feature, fallbackClassName);
+            Geometry geometry = geometryFromGeoJson(geometryObject);
+            if (geometry == null || geometry.isEmpty()) {
                 continue;
             }
 
-            ROI roi = polygonRingsToROI(polyEl.getAsJsonArray(), plane);
-            if (roi == null) {
+            ROI roi = GeometryTools.geometryToROI(geometry, plane);
+            if (roi == null || roi.isEmpty()) {
                 continue;
             }
 
@@ -371,58 +314,187 @@ public class HistoSegExtension implements QuPathExtension {
         return objects;
     }
 
-    private static ROI polygonRingsToROI(JsonArray rings, ImagePlane plane) {
-        if (rings.size() == 0) {
+    private static JsonObject getObject(JsonObject parent, String key) {
+        if (parent == null || !parent.has(key) || !parent.get(key).isJsonObject()) {
             return null;
         }
-
-        JsonElement outerEl = rings.get(0);
-        if (!outerEl.isJsonArray()) {
-            return null;
-        }
-
-        List<Point2> outerPoints = ringToPoints(outerEl.getAsJsonArray());
-        if (outerPoints.size() < 3) {
-            return null;
-        }
-
-        // QuPath 0.7 ROIs helper does not support this holes overload here.
-        // For now, ignore inner rings and keep only the outer boundary.
-        return ROIs.createPolygonROI(outerPoints, plane);
+        return parent.getAsJsonObject(key);
     }
 
-    private static List<Point2> ringToPoints(JsonArray ring) {
-        List<Point2> pts = new ArrayList<>();
+    private static String extractClassName(JsonObject feature, String fallbackClassName) {
+        JsonObject properties = getObject(feature, "properties");
+        if (properties != null && properties.has("class") && !properties.get("class").isJsonNull()) {
+            String value = properties.get("class").getAsString();
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return fallbackClassName;
+    }
 
-        for (JsonElement pEl : ring) {
-            if (!pEl.isJsonArray()) {
+    private static Geometry geometryFromGeoJson(JsonObject geom) {
+        if (geom == null || !geom.has("type")) {
+            return null;
+        }
+
+        String type = geom.get("type").getAsString();
+        if (!geom.has("coordinates") || !geom.get("coordinates").isJsonArray()) {
+            return null;
+        }
+
+        JsonArray coordinates = geom.getAsJsonArray("coordinates");
+
+        try {
+            return switch (type) {
+                case "Polygon" -> polygonFromCoordinates(coordinates);
+                case "MultiPolygon" -> multiPolygonFromCoordinates(coordinates);
+                default -> null;
+            };
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static Geometry polygonFromCoordinates(JsonArray ringsArray) {
+        if (ringsArray == null || ringsArray.size() == 0) {
+            return null;
+        }
+
+        LinearRing shell = linearRingFromJsonArray(getJsonArray(ringsArray, 0));
+        if (shell == null) {
+            return null;
+        }
+
+        LinearRing[] holes = new LinearRing[Math.max(0, ringsArray.size() - 1)];
+        for (int i = 1; i < ringsArray.size(); i++) {
+            LinearRing hole = linearRingFromJsonArray(getJsonArray(ringsArray, i));
+            if (hole == null) {
+                return null;
+            }
+            holes[i - 1] = hole;
+        }
+
+        Polygon polygon = GEOMETRY_FACTORY.createPolygon(shell, holes);
+        return makeGeometryValid(polygon);
+    }
+
+    private static Geometry multiPolygonFromCoordinates(JsonArray polygonsArray) {
+        if (polygonsArray == null || polygonsArray.size() == 0) {
+            return null;
+        }
+
+        List<Polygon> polygons = new ArrayList<>();
+
+        for (JsonElement polygonElement : polygonsArray) {
+            if (!polygonElement.isJsonArray()) {
                 continue;
             }
 
-            JsonArray p = pEl.getAsJsonArray();
-            if (p.size() < 2) {
+            Geometry geometry = polygonFromCoordinates(polygonElement.getAsJsonArray());
+            if (geometry == null || geometry.isEmpty()) {
                 continue;
             }
 
-            double x = p.get(0).getAsDouble();
-            double y = p.get(1).getAsDouble();
-            pts.add(new Point2(x, y));
+            if (geometry instanceof Polygon polygon) {
+                polygons.add(polygon);
+            } else if (geometry instanceof MultiPolygon multiPolygon) {
+                for (int i = 0; i < multiPolygon.getNumGeometries(); i++) {
+                    Geometry g = multiPolygon.getGeometryN(i);
+                    if (g instanceof Polygon polygon) {
+                        polygons.add(polygon);
+                    }
+                }
+            }
         }
 
-        if (!pts.isEmpty() && isClosedRingDuplicate(pts)) {
-            pts.remove(pts.size() - 1);
+        if (polygons.isEmpty()) {
+            return null;
         }
 
-        return pts;
+        MultiPolygon multiPolygon = GEOMETRY_FACTORY.createMultiPolygon(polygons.toArray(new Polygon[0]));
+        return makeGeometryValid(multiPolygon);
     }
 
-    private static boolean isClosedRingDuplicate(List<Point2> pts) {
-        if (pts.size() < 2) {
-            return false;
+    private static Geometry makeGeometryValid(Geometry geometry) {
+        if (geometry == null) {
+            return null;
         }
-        Point2 first = pts.get(0);
-        Point2 last = pts.get(pts.size() - 1);
-        return first.getX() == last.getX() && first.getY() == last.getY();
+
+        if (geometry.isValid()) {
+            return geometry;
+        }
+
+        Geometry repaired = geometry.buffer(0);
+        if (repaired == null || repaired.isEmpty()) {
+            return null;
+        }
+
+        return repaired;
+    }
+
+    private static LinearRing linearRingFromJsonArray(JsonArray ringArray) {
+        Coordinate[] coordinates = coordinatesFromRing(ringArray);
+        if (coordinates == null) {
+            return null;
+        }
+
+        try {
+            return GEOMETRY_FACTORY.createLinearRing(coordinates);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static Coordinate[] coordinatesFromRing(JsonArray ringArray) {
+        if (ringArray == null || ringArray.size() < 4) {
+            return null;
+        }
+
+        List<Coordinate> coordinates = new ArrayList<>();
+
+        for (JsonElement pointElement : ringArray) {
+            if (!pointElement.isJsonArray()) {
+                continue;
+            }
+
+            JsonArray point = pointElement.getAsJsonArray();
+            if (point.size() < 2) {
+                continue;
+            }
+
+            double x = point.get(0).getAsDouble();
+            double y = point.get(1).getAsDouble();
+            coordinates.add(new Coordinate(x, y));
+        }
+
+        if (coordinates.size() < 3) {
+            return null;
+        }
+
+        Coordinate first = coordinates.get(0);
+        Coordinate last = coordinates.get(coordinates.size() - 1);
+
+        if (!sameCoordinate(first, last)) {
+            coordinates.add(new Coordinate(first.x, first.y));
+        }
+
+        if (coordinates.size() < 4) {
+            return null;
+        }
+
+        return coordinates.toArray(new Coordinate[0]);
+    }
+
+    private static boolean sameCoordinate(Coordinate a, Coordinate b) {
+        return a != null && b != null && a.x == b.x && a.y == b.y;
+    }
+
+    private static JsonArray getJsonArray(JsonArray parent, int index) {
+        if (parent == null || index < 0 || index >= parent.size()) {
+            return null;
+        }
+        JsonElement element = parent.get(index);
+        return element != null && element.isJsonArray() ? element.getAsJsonArray() : null;
     }
 
     private static PathObject createAnnotationObject(ROI roi, String className) {
