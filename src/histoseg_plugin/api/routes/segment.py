@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,9 @@ from histoseg_plugin.api.schemas import (
     WSISegmentationRequest,
     WSISegmentationResponse,
 )
-from histoseg_plugin.core.segmentation.geojson import logits_argmax_to_geojson
+from histoseg_plugin.core.segmentation.geojson import (
+    logits_argmax_to_geojson_multipolygon,
+)
 from histoseg_plugin.core.segmentation.segment import run_model_and_stitch_logits
 from histoseg_plugin.core.tiling.tile import generate_tiles_from_tissue
 from histoseg_plugin.core.tissue.geojson import contours_to_geojson_features
@@ -21,6 +24,7 @@ from histoseg_plugin.io.slide import assert_allowed_root, slide_uri_to_path
 from histoseg_plugin.wsi_core.segmentation import segment_tissue
 
 router = APIRouter(prefix="/segment", tags=["segmentation"])
+logger = logging.getLogger(__name__)
 
 ALLOWED_ROOTS = [Path("/mnt/nas6"), Path("/mnt/nas7")]  # TODO: move to settings
 
@@ -140,7 +144,15 @@ def segment_wsi(
 
     with open_wsi(slide_path) as wsi:
         # 1) Tissue segmentation
+        logger.info("Running tissue segmentation for slide %s", req.slide_uri)
         contours, holes, seg_level = run_tissue_segmentation(wsi=wsi, req=req)
+
+        logger.info(
+            "Found %d tissue contours and %d holes at seg_level %d",
+            len(contours),
+            len(holes),
+            seg_level,
+        )
 
         tissue_geojson = build_tissue_geojson(
             contours=contours,
@@ -151,6 +163,7 @@ def segment_wsi(
         )
 
         # 2) Tile generation
+        logger.info("Generating tiles from tissue contours for slide %s", req.slide_uri)
         coords = generate_tiles_from_tissue(
             wsi=wsi,
             contours_tissue=contours,
@@ -165,8 +178,14 @@ def segment_wsi(
             bot_right=req.bot_right,
             max_workers=req.max_workers,
         )
+        logger.info(
+            "Generated %d tile coordinates for slide %s", len(coords), req.slide_uri
+        )
 
     # 3) Inference + stitching
+    logger.info(
+        "Running model inference and stitching logits for slide %s", req.slide_uri
+    )
     stitch_result = run_model_and_stitch_logits(
         slide_path=str(slide_path.resolve()),
         coords=coords,
@@ -174,19 +193,27 @@ def segment_wsi(
         tile_size=req.patch_size,
         model=model,
         device=device,
-        output_target_mpp=req.output_target_mpp,
+        output_target_mpp=2.0,
         batch_size=32,
         num_workers=32,
     )
 
     # 4) Logits -> GeoJSON
+    logger.info("Converting logits to GeoJSON for slide %s", req.slide_uri)
     outputs: dict[str, GeoJSONFeatureCollection] = {}
     for head_name, avg_logits in stitch_result.avg_logits_by_head.items():
         spec = manifest["output"][head_name]
         class_names = [label["name"] for label in spec["labels"]]
         background_id = spec.get("background_id", 0)
 
-        geojson = logits_argmax_to_geojson(
+        logger.info(
+            "Converting to GeoJSON for head '%s' with %d classes (background_id=%d) for slide %s",
+            head_name,
+            len(class_names),
+            background_id,
+            req.slide_uri,
+        )
+        geojson = logits_argmax_to_geojson_multipolygon(
             avg_logits=avg_logits,
             class_names=class_names,
             head_name=head_name,
@@ -200,6 +227,8 @@ def segment_wsi(
             max_hole_area=200,
         )
         outputs[head_name] = GeoJSONFeatureCollection(**geojson)
+
+    logger.info("Completed processing all heads for slide %s", req.slide_uri)
 
     return WSISegmentationResponse(
         coords_space="level0",
