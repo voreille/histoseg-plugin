@@ -1,5 +1,8 @@
+# TODO: handle opening wsi better
+    
 import math
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Optional, Sequence, Tuple
 
 import numpy as np
@@ -10,10 +13,45 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms as T
 
 
-# -------------------------
-# Dataset
-# -------------------------
 class TileDataset(Dataset):
+    def __init__(
+        self,
+        wsi_path: str | Path,
+        coords: np.ndarray,
+        tile_level: int,
+        tile_size: int,
+        transforms: Optional[torch.nn.Module] = None,
+    ):
+        self.wsi_path = str(wsi_path)
+        self.coords = coords
+        self.tile_size_lvl = tile_size
+        self.tile_level = tile_level
+        self.transforms = transforms or T.Compose([T.ToTensor()])
+        self._wsi = None  # opened lazily in each worker
+
+    def _get_wsi(self) -> openslide.OpenSlide:
+        if self._wsi is None:
+            self._wsi = openslide.OpenSlide(self.wsi_path)
+        return self._wsi
+
+    def __len__(self) -> int:
+        return len(self.coords)
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+        wsi = self._get_wsi()
+        x0, y0 = self.coords[idx, :]
+        tile = wsi.read_region(
+            (int(x0), int(y0)),
+            self.tile_level,
+            (self.tile_size_lvl, self.tile_size_lvl),
+        ).convert("RGB")
+        tile = self.transforms(tile)
+        return tile, torch.tensor([x0, y0], dtype=torch.int64)
+
+    def __del__(self):
+        if self._wsi is not None:
+            self._wsi.close()
+class TileDatasetOld(Dataset):
     """
     Reads RGB tiles from an OpenSlide at coords.
 
@@ -176,7 +214,7 @@ class StitchResult:
 
 def run_model_and_stitch_logits(
     *,
-    wsi: openslide.OpenSlide,
+    slide_path: str,
     coords: np.ndarray,
     tile_size: int,
     tile_level: int,
@@ -208,6 +246,7 @@ def run_model_and_stitch_logits(
 
     model = model.to(device).eval()
 
+    wsi = openslide.OpenSlide(slide_path)
     mpp = get_mpp(wsi=wsi)
     level0_w, level0_h = wsi.level_dimensions[0]
 
@@ -220,7 +259,7 @@ def run_model_and_stitch_logits(
     fy = level0_h / mask_h
 
     ds = TileDataset(
-        wsi=wsi,
+        wsi_path=slide_path,
         coords=coords,
         tile_size=tile_size,
         tile_level=tile_level,
@@ -237,6 +276,8 @@ def run_model_and_stitch_logits(
     # tile footprint in level-0 pixels
     level_downsample = float(wsi.level_downsamples[ds.tile_level])
     tile_extent0 = ds.tile_size_lvl * level_downsample  # assumes square tiles
+
+    wsi.close()
 
     # Allocate shared weight map once
     w_map = (

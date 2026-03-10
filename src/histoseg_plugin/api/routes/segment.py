@@ -166,40 +166,40 @@ def segment_wsi(
             max_workers=req.max_workers,
         )
 
-        # 3) Inference + stitching
-        stitch_result = run_model_and_stitch_logits(
-            wsi=wsi,
-            coords=coords,
-            tile_level=req.patch_level,
-            tile_size=req.patch_size,
-            model=model,
-            device=device,
-            output_target_mpp=req.output_target_mpp,
-            batch_size=32,
-            num_workers=req.num_workers,
+    # 3) Inference + stitching
+    stitch_result = run_model_and_stitch_logits(
+        slide_path=str(slide_path.resolve()),
+        coords=coords,
+        tile_level=req.patch_level,
+        tile_size=req.patch_size,
+        model=model,
+        device=device,
+        output_target_mpp=req.output_target_mpp,
+        batch_size=32,
+        num_workers=32,
+    )
+
+    # 4) Logits -> GeoJSON
+    outputs: dict[str, GeoJSONFeatureCollection] = {}
+    for head_name, avg_logits in stitch_result.avg_logits_by_head.items():
+        spec = manifest["output"][head_name]
+        class_names = [label["name"] for label in spec["labels"]]
+        background_id = spec.get("background_id", 0)
+
+        geojson = logits_argmax_to_geojson(
+            avg_logits=avg_logits,
+            class_names=class_names,
+            head_name=head_name,
+            fx=stitch_result.meta.fx,
+            fy=stitch_result.meta.fy,
+            skip_class_ids=[background_id],
+            simplify_epsilon=2.0,
+            close_kernel=5,
+            open_kernel=3,
+            min_object_area=200,
+            max_hole_area=200,
         )
-
-        # 4) Logits -> GeoJSON
-        outputs: dict[str, GeoJSONFeatureCollection] = {}
-        for head_name, avg_logits in stitch_result.avg_logits_by_head.items():
-            spec = manifest["output"][head_name]
-            class_names = [label["name"] for label in spec["labels"]]
-            background_id = spec.get("background_id", 0)
-
-            geojson = logits_argmax_to_geojson(
-                avg_logits=avg_logits,
-                class_names=class_names,
-                head_name=head_name,
-                fx=stitch_result.meta.fx,
-                fy=stitch_result.meta.fy,
-                skip_class_ids=[background_id],
-                simplify_epsilon=2.0,
-                close_kernel=5,
-                open_kernel=3,
-                min_object_area=200,
-                max_hole_area=200,
-            )
-            outputs[head_name] = GeoJSONFeatureCollection(**geojson)
+        outputs[head_name] = GeoJSONFeatureCollection(**geojson)
 
     return WSISegmentationResponse(
         coords_space="level0",
