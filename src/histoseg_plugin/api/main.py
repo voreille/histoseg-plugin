@@ -10,7 +10,7 @@ from histoseg_plugin.api.logging import setup_logging
 from histoseg_plugin.api.routes.segment import router as segmentation_router
 from histoseg_plugin.models.loader import load_model_bundle
 
-MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/models/twotasks")
+MODEL_DIR = Path("/home/valentin/workspaces/pathseg-benchmark/models/spinning-peach-46")
 
 setup_logging(level="DEBUG")
 
