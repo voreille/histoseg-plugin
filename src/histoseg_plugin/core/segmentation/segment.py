@@ -1,5 +1,5 @@
 # TODO: handle opening wsi better
-    
+
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,42 +51,6 @@ class TileDataset(Dataset):
     def __del__(self):
         if self._wsi is not None:
             self._wsi.close()
-class TileDatasetOld(Dataset):
-    """
-    Reads RGB tiles from an OpenSlide at coords.
-
-    coords must be level-0 pixel coords (x, y) for the tile top-left.
-    attrs must include:
-      - patch_size: tile size in pixels at patch_level
-      - patch_level: openslide level used for read_region
-    """
-
-    def __init__(
-        self,
-        wsi: openslide.OpenSlide,
-        coords: np.ndarray,
-        tile_level: int,
-        tile_size: int,
-        transforms: Optional[torch.nn.Module] = None,
-    ):
-        self.wsi = wsi
-        self.coords = coords
-        self.tile_size_lvl = tile_size
-        self.tile_level = tile_level
-        self.transforms = transforms or T.Compose([T.ToTensor()])
-
-    def __len__(self) -> int:
-        return len(self.coords)
-
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
-        x0, y0 = self.coords[idx, :]
-        tile = self.wsi.read_region(
-            (int(x0), int(y0)),
-            self.tile_level,
-            (self.tile_size_lvl, self.tile_size_lvl),
-        ).convert("RGB")
-        tile = self.transforms(tile)
-        return tile, torch.tensor([x0, y0], dtype=torch.int64)
 
 
 def get_mpp(wsi: openslide.OpenSlide) -> float:
