@@ -3,7 +3,7 @@
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence, Tuple, Callable
 
 import numpy as np
 import openslide
@@ -11,6 +11,8 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms as T
+
+from histoseg_plugin.core.model_runtime.base import BaseModelRunner
 
 
 class TileDataset(Dataset):
@@ -20,7 +22,7 @@ class TileDataset(Dataset):
         coords: np.ndarray,
         tile_level: int,
         tile_size: int,
-        transforms: Optional[torch.nn.Module] = None,
+        transforms: Optional[Callable] = None,
     ):
         self.wsi_path = str(wsi_path)
         self.coords = coords
@@ -136,25 +138,6 @@ def finalize_canvas(
     return sum_map / w.unsqueeze(0)
 
 
-def _normalize_model_output(out: Any) -> Dict[str, torch.Tensor]:
-    """
-    Accept:
-      - Tensor -> {"logits": tensor}
-      - dict[str, Tensor] -> returned as-is (filtered to tensors)
-    Reject everything else.
-
-    Expected tensors: (B,C,H,W) logits.
-    """
-    if torch.is_tensor(out):
-        return {"logits": out}
-    if isinstance(out, dict):
-        tens = {k: v for k, v in out.items() if torch.is_tensor(v)}
-        if not tens:
-            raise ValueError("Model returned dict but it contained no tensors.")
-        return tens
-    raise TypeError(f"Unsupported model output type: {type(out)}")
-
-
 @dataclass
 class StitchMeta:
     mask_h: int
@@ -180,19 +163,18 @@ def run_model_and_stitch_logits(
     *,
     slide_path: str,
     coords: np.ndarray,
-    tile_size: int,
+    level_tile_size: int,
     tile_level: int,
-    model: torch.nn.Module,
-    device: torch.device,
+    model_runner: BaseModelRunner,
     output_target_mpp: float = 4.0,
     batch_size: int = 16,
     num_workers: int = 0,
-    transforms: Optional[torch.nn.Module] = None,
     use_amp: bool = True,
-    amp_dtype: torch.dtype = torch.float16,
     pin_memory: Optional[bool] = None,
     return_weight_map: bool = True,
     heads: Optional[Sequence[str]] = None,
+    resample: Optional[bool] = None,
+    model_tile_size: Optional[int] = None,
 ) -> StitchResult:
     """
     Runs tile inference and stitches logits on a mask grid corresponding to output_target_mpp.
@@ -205,10 +187,14 @@ def run_model_and_stitch_logits(
     if coords.shape[0] == 0:
         raise ValueError("coords is empty (no tiles).")
 
+    device = (
+        model_runner.device if hasattr(model_runner, "device") else torch.device("cpu")
+    )
+
     if pin_memory is None:
         pin_memory = device.type == "cuda"
 
-    model = model.to(device).eval()
+    # model_runner = model_runner.to(device).eval()
 
     wsi = openslide.OpenSlide(slide_path)
     mpp = get_mpp(wsi=wsi)
@@ -222,10 +208,24 @@ def run_model_and_stitch_logits(
     fx = level0_w / mask_w
     fy = level0_h / mask_h
 
+    if resample:
+        # TODO: add a check for model tile size
+        transforms = T.Compose(
+            [
+                T.Resize(
+                    size=(model_tile_size, model_tile_size),
+                    interpolation=T.InterpolationMode.BILINEAR,
+                ),
+                T.ToTensor(),
+            ]
+        )
+    else:
+        transforms = T.ToTensor()
+
     ds = TileDataset(
         wsi_path=slide_path,
         coords=coords,
-        tile_size=tile_size,
+        tile_size=level_tile_size,
         tile_level=tile_level,
         transforms=transforms,
     )
@@ -258,14 +258,7 @@ def run_model_and_stitch_logits(
     for tiles, xy0 in loader:
         tiles = tiles.to(device, non_blocking=True)
 
-        with torch.inference_mode():
-            if use_amp:
-                with torch.autocast(device_type="cuda", dtype=amp_dtype):
-                    out = model(tiles)
-            else:
-                out = model(tiles)
-
-        out_dict = _normalize_model_output(out)
+        out_dict = model_runner.predict(tiles)
 
         # optionally select heads
         if heads is not None:
