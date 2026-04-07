@@ -20,4 +20,11 @@ def load_model_bundle(model_dir: Path, device: torch.device):
 
         return ONNXRunner(model_dir=model_dir, manifest=manifest)
 
+    if runtime == "torch":
+        from .torch_runner import TorchRunner
+
+        return TorchRunner(model_dir=model_dir, manifest=manifest, device=device)
+
+
+
     raise ValueError(f"Unsupported runtime: {runtime}")

@@ -35,25 +35,11 @@ class ONNXRunner(BaseModelRunner):
         else:
             self.preprocessor = None
 
-    def predict(self, batch: torch.Tensor) -> dict[str, torch.Tensor]:
-        """
-        Input batch contract:
-            - torch.Tensor
-            - shape: (B, C, H, W)
-            - RGB
-            - float32
-            - values in [0, 1]
-
-        Output contract:
-            - dict[str, torch.Tensor]
-            - tensors normalized to BCHW for the rest of the pipeline
-        """
+    def predict_tiles(self, batch: torch.Tensor) -> dict[str, torch.Tensor]:
         x = batch.detach().cpu().to(dtype=torch.float32)
+        x = self.preprocess(x)
 
-        if self.preprocessor is not None:
-            x = self.preprocessor(x)
-
-        x_np = x.numpy().astype(np.float32)  # BCHW
+        x_np = x.numpy().astype(np.float32)
 
         if self.input_layout == "BHWC":
             x_np = np.transpose(x_np, (0, 2, 3, 1))
@@ -63,6 +49,7 @@ class ONNXRunner(BaseModelRunner):
         outputs = self.session.run(None, {self.input_name: x_np})
 
         manifest_heads = list(self.manifest.output.items())
+
         if len(outputs) != len(manifest_heads):
             raise ValueError(
                 f"ONNX runtime returned {len(outputs)} outputs, "
@@ -70,6 +57,7 @@ class ONNXRunner(BaseModelRunner):
             )
 
         out_dict: dict[str, torch.Tensor] = {}
+
         for (head_name, head_spec), out_np in zip(manifest_heads, outputs):
             out_t = torch.from_numpy(out_np)
 
@@ -77,8 +65,7 @@ class ONNXRunner(BaseModelRunner):
                 out_t = out_t.permute(0, 3, 1, 2)
             elif head_spec.output_layout != "BCHW":
                 raise ValueError(
-                    f"Unsupported output layout for head '{head_name}': "
-                    f"{head_spec.output_layout}"
+                    f"Unsupported output layout for head '{head_name}': {head_spec.output_layout}"
                 )
 
             out_dict[head_name] = out_t

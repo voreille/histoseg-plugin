@@ -45,9 +45,7 @@ class ReinhardPreprocessor(BasePreprocessor):
 
         reference_image = self.config.get("reference_image")
         if not reference_image:
-            raise ValueError(
-                "ReinhardPreprocessor requires config['reference_image']"
-            )
+            raise ValueError("ReinhardPreprocessor requires config['reference_image']")
 
         self.reference_image_path = _resolve_asset_path(
             model_dir=self.model_dir,
@@ -65,7 +63,7 @@ class ReinhardPreprocessor(BasePreprocessor):
         out = np.empty_like(batch_np, dtype=np.float32)
 
         for i in range(batch_np.shape[0]):
-            img_chw = batch_np[i]                  # CHW
+            img_chw = batch_np[i]  # CHW
             img_hwc = np.transpose(img_chw, (1, 2, 0))  # HWC RGB
 
             if np.any(img_hwc):
@@ -83,7 +81,9 @@ class ReinhardPreprocessor(BasePreprocessor):
         return torch.from_numpy(out)
 
     @staticmethod
-    def _load_reference_stats(reference_image_path: Path) -> tuple[np.ndarray, np.ndarray]:
+    def _load_reference_stats(
+        reference_image_path: Path,
+    ) -> tuple[np.ndarray, np.ndarray]:
         ref_bgr = cv2.imread(str(reference_image_path), cv2.IMREAD_COLOR)
         if ref_bgr is None:
             raise FileNotFoundError(
@@ -119,24 +119,60 @@ class ReinhardPreprocessor(BasePreprocessor):
         norm_lab = source_lab.copy()
         for c in range(3):
             norm_lab[:, :, c] = (
-                ((norm_lab[:, :, c] - ms[c]) * (stdt[c] / (stds[c] + eps))) + mt[c]
-            )
+                (norm_lab[:, :, c] - ms[c]) * (stdt[c] / (stds[c] + eps))
+            ) + mt[c]
 
         norm_image = cv2.cvtColor(norm_lab, cv2.COLOR_Lab2RGB)
         return norm_image.astype(np.float32)
 
 
-def build_preprocessor(
-    model_dir: Path,
-    spec: Any,
-) -> BasePreprocessor:
+class NormalizePreprocessor(BasePreprocessor):
     """
-    Expected spec shape:
-        spec.id: str
-        spec.config: dict
+    Channel-wise mean/std normalization.
+
+    Input:
+        - BCHW
+        - float32
+        - values in [0, 1]
+
+    Output:
+        - BCHW
+        - normalized: (x - mean) / std
     """
+
+    def __init__(self, model_dir: Path, config: Mapping[str, Any] | None = None):
+        super().__init__(model_dir=model_dir, config=config)
+
+        mean = self.config.get("mean")
+        std = self.config.get("std")
+
+        if mean is None or std is None:
+            raise ValueError("NormalizePreprocessor requires 'mean' and 'std'")
+
+        if len(mean) != len(std):
+            raise ValueError("mean and std must have same length")
+
+        self.mean = torch.tensor(mean, dtype=torch.float32).view(1, -1, 1, 1)
+        self.std = torch.tensor(std, dtype=torch.float32).view(1, -1, 1, 1)
+
+        if torch.any(self.std <= 0):
+            raise ValueError("std must be > 0")
+
+    def __call__(self, batch: torch.Tensor) -> torch.Tensor:
+        _validate_batch(batch)
+
+        mean = self.mean.to(batch.device)
+        std = self.std.to(batch.device)
+
+        return (batch - mean) / std
+
+
+def build_preprocessor(model_dir: Path, spec: Any) -> BasePreprocessor:
     if spec.id == "reinhard_v1":
         return ReinhardPreprocessor(model_dir=model_dir, config=spec.config)
+
+    if spec.id == "normalize_v1":
+        return NormalizePreprocessor(model_dir=model_dir, config=spec.config)
 
     raise ValueError(f"Unknown preprocessor id: {spec.id}")
 

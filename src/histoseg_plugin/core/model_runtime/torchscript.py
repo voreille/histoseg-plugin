@@ -27,8 +27,10 @@ class TorchScriptRunner(BaseModelRunner):
             )
         self.default_output_key = output_keys[0]
 
-    def predict(self, batch: torch.Tensor) -> dict[str, torch.Tensor]:
+    def predict_tiles(self, batch: torch.Tensor) -> dict[str, torch.Tensor]:
         batch = batch.to(self.device, non_blocking=True)
+        batch = self.preprocess(batch)
+
         with torch.inference_mode():
             if self.use_amp:
                 with torch.autocast(device_type=self.device.type, dtype=self.amp_dtype):
