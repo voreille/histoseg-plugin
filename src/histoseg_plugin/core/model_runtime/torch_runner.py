@@ -6,7 +6,7 @@ import torch
 
 from .base import BaseModelRunner
 from .contracts import ModelManifest
-from .torch_adapters.default import DefaultTorchModelAdapter
+from .torch_adapters import DefaultTorchModelAdapter
 from .utils import import_from_string
 
 

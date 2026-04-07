@@ -10,7 +10,8 @@ from histoseg_plugin.api.logging import setup_logging
 from histoseg_plugin.api.routes.segment import router as segmentation_router
 from histoseg_plugin.core.model_runtime.loader import load_model_bundle
 
-MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/AIgrading_anorak")
+# MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/AIgrading_anorak")
+MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/models/giddy-totem-101")
 # MODEL_DIR = Path("/home/valentin/workspaces/ignite-data-toolkit/data/models/he_export")
 # MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/models/spinning-peach-46")
 

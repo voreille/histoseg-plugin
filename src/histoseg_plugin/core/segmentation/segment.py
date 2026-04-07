@@ -1,4 +1,8 @@
 # TODO: handle opening wsi better
+# TODO: check when tiles need resampling how the output is treated, cause mpp will change
+# TODO: check how the geometry is handled, maybe add a Stitcher whose job is to stitch tiles together and handle all the geometry, and just feed it tiles + logits + coords + meta, and it handles the rest (including final averaging). That way we can reuse it for other things like stitching support logits for prototypes.
+# TODO: add Hann weighting as an option for stitching 
+
 
 import math
 from dataclasses import dataclass
@@ -169,10 +173,8 @@ def run_model_and_stitch_logits(
     output_target_mpp: float = 4.0,
     batch_size: int = 16,
     num_workers: int = 0,
-    use_amp: bool = True,
     pin_memory: Optional[bool] = None,
     return_weight_map: bool = True,
-    heads: Optional[Sequence[str]] = None,
     resample: Optional[bool] = None,
     model_tile_size: Optional[int] = None,
 ) -> StitchResult:
@@ -237,11 +239,12 @@ def run_model_and_stitch_logits(
         pin_memory=pin_memory,
     )
 
-    # tile footprint in level-0 pixels
+    # tile footprint in level-0 pixels 
+    # TODO: if resampling, this will be different from the actual tile size fed to the model; check if that causes any issues with how we stitch (it shouldn't, but good to verify). We just need to make sure fx/fy are correct for the tile footprint in level-0 pixels, which is what determines where the logits go on the mask.
     level_downsample = float(wsi.level_downsamples[ds.tile_level])
     tile_extent0 = ds.tile_size_lvl * level_downsample  # assumes square tiles
 
-    wsi.close()
+    wsi.close() # needed since I pass the slide path to each worker and they open it lazily; we don't want the main process holding an open handle to the slide since it won't be used for reading and could cause issues on some filesystems if too many handles are open. Each worker will open its own handle when needed and close it when done (handled by TileDataset.__del__).
 
     # Allocate shared weight map once
     w_map = (
@@ -253,20 +256,10 @@ def run_model_and_stitch_logits(
     # We allocate sum maps lazily per head after first batch (need C)
     sum_maps: Dict[str, torch.Tensor] = {}
 
-    use_amp = bool(use_amp and device.type == "cuda")
-
     for tiles, xy0 in loader:
         tiles = tiles.to(device, non_blocking=True)
 
-        out_dict = model_runner.predict(tiles)
-
-        # optionally select heads
-        if heads is not None:
-            out_dict = {k: v for k, v in out_dict.items() if k in set(heads)}
-            if not out_dict:
-                raise ValueError(
-                    f"Requested heads={list(heads)} but model returned none of them."
-                )
+        out_dict = model_runner.predict_tiles(tiles)
 
         # validate shapes + allocate sum_maps as needed
         for head, logits in out_dict.items():
@@ -370,6 +363,7 @@ def run_model_and_stitch_logits(
         avg_by_head = {k: v for k, v in sum_maps.items()}
     else:
         avg_by_head = {k: finalize_canvas(v, w_map) for k, v in sum_maps.items()}
+    
 
     meta = StitchMeta(
         mask_h=mask_h,
