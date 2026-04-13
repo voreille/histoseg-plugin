@@ -30,6 +30,7 @@ import javafx.scene.control.MenuItem;
 import javafx.scene.control.TextInputDialog;
 import qupath.lib.gui.QuPathGUI;
 import qupath.lib.gui.extensions.QuPathExtension;
+import qupath.lib.images.ImageData;
 import qupath.lib.images.servers.ImageServer;
 import qupath.lib.objects.PathObject;
 import qupath.lib.objects.PathObjects;
@@ -77,7 +78,7 @@ public class HistoSegExtension implements QuPathExtension {
             return;
         }
 
-        var imageData = viewer.getImageData();
+        ImageData<?> imageData = viewer.getImageData();
         ImageServer<?> server = imageData.getServer();
         String slideUri = getPrimaryUri(server.getURIs());
         if (slideUri == null) {
@@ -112,7 +113,7 @@ public class HistoSegExtension implements QuPathExtension {
             return;
         }
 
-        var imageData = viewer.getImageData();
+        ImageData<?> imageData = viewer.getImageData();
         ImageServer<?> server = imageData.getServer();
         String slideUri = getPrimaryUri(server.getURIs());
         if (slideUri == null) {
@@ -131,16 +132,31 @@ public class HistoSegExtension implements QuPathExtension {
         new Thread(() -> {
             try {
                 String responseBody = postJson(serverUrl + WSI_SEGMENTATION_ENDPOINT, payload.toString());
-                List<PathObject> objects = parseWSISegmentationResponse(responseBody);
+                ParsedWSIResponse parsed = parseWSISegmentationResponse(responseBody);
 
-                Platform.runLater(() -> addObjectsToHierarchy(imageData, objects));
+                Platform.runLater(() -> {
+                    addObjectsToHierarchy(imageData, parsed.objects);
+                    if (parsed.statisticsJson != null) {
+                        DemoStatisticsViewer.show(parsed.statisticsJson);
+                    }
+                });
             } catch (Exception ex) {
                 Platform.runLater(() -> showError("HistoSeg", ex.toString()));
             }
         }, "HistoSeg-WSI").start();
     }
 
-    private static void addObjectsToHierarchy(qupath.lib.images.ImageData<?> imageData, List<PathObject> objects) {
+    private static class ParsedWSIResponse {
+        final List<PathObject> objects;
+        final JsonObject statisticsJson;
+
+        ParsedWSIResponse(List<PathObject> objects, JsonObject statisticsJson) {
+            this.objects = objects;
+            this.statisticsJson = statisticsJson;
+        }
+    }
+
+    private static void addObjectsToHierarchy(ImageData<?> imageData, List<PathObject> objects) {
         if (objects == null || objects.isEmpty()) {
             return;
         }
@@ -247,7 +263,7 @@ public class HistoSegExtension implements QuPathExtension {
         return response.body();
     }
 
-    private static List<PathObject> parseWSISegmentationResponse(String json) {
+    private static ParsedWSIResponse parseWSISegmentationResponse(String json) {
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
         List<PathObject> objects = new ArrayList<>();
 
@@ -265,7 +281,12 @@ public class HistoSegExtension implements QuPathExtension {
             }
         }
 
-        return objects;
+        JsonObject statisticsJson = null;
+        if (root.has("statistics") && root.get("statistics").isJsonObject()) {
+            statisticsJson = root.getAsJsonObject("statistics");
+        }
+
+        return new ParsedWSIResponse(objects, statisticsJson);
     }
 
     private static List<PathObject> featureCollectionStringToAnnotations(String geojson, String fallbackClassName) {
