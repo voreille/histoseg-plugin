@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import openslide
+import torch
 from fastapi import APIRouter, HTTPException, Request
 
 from histoseg_plugin.api.schemas import (
@@ -13,9 +14,11 @@ from histoseg_plugin.api.schemas import (
     TissueContoursRequest,
     WSISegmentationRequest,
     WSISegmentationResponse,
+    DemoPatternStatistics,
 )
 from histoseg_plugin.core.inference.bundle import InferenceBundle
 from histoseg_plugin.core.inference.planning import resolve_wsi_inference_plan
+from histoseg_plugin.core.postprocessing.stats import compute_demo_pattern_statistics
 from histoseg_plugin.core.segmentation.geojson import (
     logits_argmax_to_geojson_multipolygon,
 )
@@ -119,6 +122,42 @@ def build_tissue_geojson(
     return GeoJSONFeatureCollection(features=features)
 
 
+def maybe_compute_demo_statistics(
+    *,
+    stitched_outputs: dict[str, torch.Tensor],
+    processed_metadata: dict[str, Any] | None,
+    manifest: Any,
+    covered_mask: torch.Tensor | None,
+) -> DemoPatternStatistics | None:
+    required_keys = {
+        "logits_a",
+        "logits_b",
+        "logits_b_conformal.safe",
+        "logits_b_conformal.max_possible",
+    }
+
+    if not required_keys.issubset(stitched_outputs.keys()):
+        return None
+
+    metadata = dict(processed_metadata or {})
+    if covered_mask is not None:
+        metadata["logits_a.covered_mask"] = covered_mask
+        metadata["logits_b.covered_mask"] = covered_mask
+
+    return compute_demo_pattern_statistics(
+        outputs=stitched_outputs,
+        metadata=metadata,
+        head_a_labels=manifest.output["logits_a"].labels,
+        head_b_labels=manifest.output["logits_b"].labels,
+        head_a_name="logits_a",
+        head_b_name="logits_b",
+        head_b_safe_name="logits_b_conformal.safe",
+        head_b_max_name="logits_b_conformal.max_possible",
+        covered_mask_a_name="logits_a.covered_mask",
+        covered_mask_b_name="logits_b.covered_mask",
+    )
+
+
 @router.post("/tissue", response_model=GeoJSONFeatureCollection)
 def segment_tissue_route(req: TissueContoursRequest) -> GeoJSONFeatureCollection:
     slide_path = resolve_and_check_slide(req.slide_uri)
@@ -144,12 +183,10 @@ def segment_wsi(
 
     bundle: InferenceBundle = request.app.state.inference_bundle
     model_runner = bundle.model_runner
-    postprocessor = bundle.postprocessor  # may be None
+    postprocessor = bundle.postprocessor
     manifest = model_runner.manifest
 
     with open_wsi(slide_path) as wsi:
-        # 1) Tissue segmentation
-
         logger.info("Running tissue segmentation for slide %s", req.slide_uri)
         plan = resolve_wsi_inference_plan(
             wsi=wsi,
@@ -176,7 +213,6 @@ def segment_wsi(
             min_area_px_level0=req.min_area_px_level0,
         )
 
-        # 2) Tile generation
         logger.info("Generating tiles from tissue contours for slide %s", req.slide_uri)
         coords = generate_tiles_from_tissue(
             wsi=wsi,
@@ -196,7 +232,6 @@ def segment_wsi(
             "Generated %d tile coordinates for slide %s", len(coords), req.slide_uri
         )
 
-    # 3) Inference + stitching
     logger.info(
         "Running model inference and stitching logits for slide %s", req.slide_uri
     )
@@ -212,36 +247,47 @@ def segment_wsi(
         resample=plan.needs_resampling,
         model_tile_size=plan.model_tile_size,
     )
-    stitched_outputs = stitch_result.avg_logits_by_head
+
+    stitched_outputs = dict(stitch_result.avg_logits_by_head)
+    processed_metadata: dict[str, Any] = {}
+
+    covered_mask = None
+    if stitch_result.weight_map is not None:
+        covered_mask = stitch_result.weight_map > 0
 
     if postprocessor is not None:
         processed = postprocessor(
             stitched_outputs=stitched_outputs,
-            aux={
-                f"{k}.covered_mask": stitch_result.weight_map > 0
-                for k in stitched_outputs.keys()
-            },
+            aux={f"{k}.covered_mask": covered_mask for k in stitched_outputs.keys()}
+            if covered_mask is not None
+            else None,
         )
-        stitched_outputs = {
-            **stitched_outputs,
-            **processed.outputs,
-        }
+        stitched_outputs.update(processed.outputs)
+        processed_metadata.update(processed.metadata)
 
-    # 4) Logits -> GeoJSON
-    logger.info("Converting logits to GeoJSON for slide %s", req.slide_uri)
+    statistics = maybe_compute_demo_statistics(
+        stitched_outputs=stitched_outputs,
+        processed_metadata=processed_metadata,
+        manifest=manifest,
+        covered_mask=covered_mask,
+    )
+
+    logger.info("Converting outputs to GeoJSON for slide %s", req.slide_uri)
     outputs: dict[str, GeoJSONFeatureCollection] = {}
+
     for head_name, avg_logits in stitch_result.avg_logits_by_head.items():
         spec = manifest.output[head_name]
         class_names = [label.name for label in spec.labels]
         background_id = spec.background_id
 
         logger.info(
-            "Converting to GeoJSON for head '%s' with %d classes (background_id=%d) for slide %s",
+            "Converting to GeoJSON for head '%s' with %d classes (background_id=%s) for slide %s",
             head_name,
             len(class_names),
             background_id,
             req.slide_uri,
         )
+
         geojson = logits_argmax_to_geojson_multipolygon(
             avg_logits=avg_logits,
             class_names=class_names,
@@ -263,4 +309,5 @@ def segment_wsi(
         coords_space="level0",
         tissue=tissue_geojson,
         outputs=outputs,
+        statistics=statistics,
     )

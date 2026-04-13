@@ -69,7 +69,30 @@ class GeoJSONFeatureCollection(BaseModel):
     features: List[GeoJSONFeature]
 
 
+class PatternBoundStats(BaseModel):
+    pattern_id: int
+    safe_area_px: int
+    argmax_area_px: int
+    max_area_px: int
+    safe_ratio: float
+    argmax_ratio: float
+    max_ratio: float
+
+
+class CompartmentPatternStats(BaseModel):
+    compartment_id: int
+    area_px: int
+    patterns: dict[str, PatternBoundStats] = Field(default_factory=dict)
+
+
+class DemoPatternStatistics(BaseModel):
+    head_b_foreground_area_px: int
+    patterns: dict[str, PatternBoundStats] = Field(default_factory=dict)
+    compartments: dict[str, CompartmentPatternStats] = Field(default_factory=dict)
+
+
 class WSISegmentationResponse(BaseModel):
     coords_space: Literal["level0"] = "level0"
     tissue: GeoJSONFeatureCollection
     outputs: Dict[str, GeoJSONFeatureCollection]
+    statistics: DemoPatternStatistics | None = None
