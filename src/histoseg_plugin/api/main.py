@@ -9,9 +9,10 @@ from fastapi.concurrency import asynccontextmanager
 from histoseg_plugin.api.logging import setup_logging
 from histoseg_plugin.api.routes.segment import router as segmentation_router
 from histoseg_plugin.core.model_runtime.loader import load_model_bundle
+from histoseg_plugin.core.inference.loader import load_inference_bundle
 
 # MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/AIgrading_anorak")
-MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/models/giddy-totem-101")
+MODEL_DIR = Path("/mnt/nas7/data/Personal/Valentin/models/pathseg-benchmark/anorak-ignite/models/giddy-spaceship-137")
 # MODEL_DIR = Path("/home/valentin/workspaces/ignite-data-toolkit/data/models/he_export")
 # MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/models/spinning-peach-46")
 
@@ -27,9 +28,9 @@ async def lifespan(app: FastAPI):
 
     logger.info("Loading model bundle from %s", MODEL_DIR)
 
-    runner = load_model_bundle(MODEL_DIR, device=device)
+    inference_bundle = load_inference_bundle(MODEL_DIR, device=device)
 
-    app.state.model_runner = runner
+    app.state.inference_bundle = inference_bundle
     app.state.device = device
 
     logger.info("Model loaded on device %s", device)

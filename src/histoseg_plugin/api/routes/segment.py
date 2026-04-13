@@ -14,11 +14,15 @@ from histoseg_plugin.api.schemas import (
     WSISegmentationRequest,
     WSISegmentationResponse,
 )
+from histoseg_plugin.core.inference.bundle import InferenceBundle
+from histoseg_plugin.core.inference.planning import resolve_wsi_inference_plan
 from histoseg_plugin.core.segmentation.geojson import (
     logits_argmax_to_geojson_multipolygon,
 )
-from histoseg_plugin.core.segmentation.segment import run_model_and_stitch_logits
-from histoseg_plugin.core.inference.planning import resolve_wsi_inference_plan
+from histoseg_plugin.core.segmentation.segment import (
+    StitchResult,
+    run_model_and_stitch_logits,
+)
 from histoseg_plugin.core.tiling.tile import generate_tiles_from_tissue
 from histoseg_plugin.core.tissue.geojson import contours_to_geojson_features
 from histoseg_plugin.io.slide import assert_allowed_root, slide_uri_to_path
@@ -138,8 +142,11 @@ def segment_wsi(
 ) -> WSISegmentationResponse:
     slide_path = resolve_and_check_slide(req.slide_uri)
 
-    model_runner = request.app.state.model_runner
+    bundle: InferenceBundle = request.app.state.inference_bundle
+    model_runner = bundle.model_runner
+    postprocessor = bundle.postprocessor  # may be None
     manifest = model_runner.manifest
+
     with open_wsi(slide_path) as wsi:
         # 1) Tissue segmentation
 
@@ -193,7 +200,7 @@ def segment_wsi(
     logger.info(
         "Running model inference and stitching logits for slide %s", req.slide_uri
     )
-    stitch_result = run_model_and_stitch_logits(
+    stitch_result: StitchResult = run_model_and_stitch_logits(
         slide_path=str(slide_path.resolve()),
         coords=coords,
         tile_level=plan.chosen_level,
@@ -205,6 +212,20 @@ def segment_wsi(
         resample=plan.needs_resampling,
         model_tile_size=plan.model_tile_size,
     )
+    stitched_outputs = stitch_result.avg_logits_by_head
+
+    if postprocessor is not None:
+        processed = postprocessor(
+            stitched_outputs=stitched_outputs,
+            aux={
+                f"{k}.covered_mask": stitch_result.weight_map > 0
+                for k in stitched_outputs.keys()
+            },
+        )
+        stitched_outputs = {
+            **stitched_outputs,
+            **processed.outputs,
+        }
 
     # 4) Logits -> GeoJSON
     logger.info("Converting logits to GeoJSON for slide %s", req.slide_uri)
@@ -227,7 +248,7 @@ def segment_wsi(
             head_name=head_name,
             fx=stitch_result.meta.fx,
             fy=stitch_result.meta.fy,
-            skip_class_ids=[background_id],
+            skip_class_ids=[background_id] if background_id is not None else [],
             simplify_epsilon=2.0,
             close_kernel=5,
             open_kernel=3,

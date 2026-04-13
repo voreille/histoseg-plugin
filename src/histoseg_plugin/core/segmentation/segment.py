@@ -1,13 +1,13 @@
 # TODO: handle opening wsi better
 # TODO: check when tiles need resampling how the output is treated, cause mpp will change
 # TODO: check how the geometry is handled, maybe add a Stitcher whose job is to stitch tiles together and handle all the geometry, and just feed it tiles + logits + coords + meta, and it handles the rest (including final averaging). That way we can reuse it for other things like stitching support logits for prototypes.
-# TODO: add Hann weighting as an option for stitching 
+# TODO: add Hann weighting as an option for stitching
 
 
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Sequence, Tuple, Callable
+from typing import Dict, Optional, Tuple, Callable
 
 import numpy as np
 import openslide
@@ -159,7 +159,7 @@ class StitchMeta:
 @dataclass
 class StitchResult:
     avg_logits_by_head: Dict[str, torch.Tensor]  # each (C,H,W) float32 CPU
-    weight_map: Optional[torch.Tensor]  # (H,W) float32 CPU
+    weight_map: torch.Tensor  # (H,W) float32 CPU
     meta: StitchMeta
 
 
@@ -239,12 +239,12 @@ def run_model_and_stitch_logits(
         pin_memory=pin_memory,
     )
 
-    # tile footprint in level-0 pixels 
+    # tile footprint in level-0 pixels
     # TODO: if resampling, this will be different from the actual tile size fed to the model; check if that causes any issues with how we stitch (it shouldn't, but good to verify). We just need to make sure fx/fy are correct for the tile footprint in level-0 pixels, which is what determines where the logits go on the mask.
     level_downsample = float(wsi.level_downsamples[ds.tile_level])
     tile_extent0 = ds.tile_size_lvl * level_downsample  # assumes square tiles
 
-    wsi.close() # needed since I pass the slide path to each worker and they open it lazily; we don't want the main process holding an open handle to the slide since it won't be used for reading and could cause issues on some filesystems if too many handles are open. Each worker will open its own handle when needed and close it when done (handled by TileDataset.__del__).
+    wsi.close()  # needed since I pass the slide path to each worker and they open it lazily; we don't want the main process holding an open handle to the slide since it won't be used for reading and could cause issues on some filesystems if too many handles are open. Each worker will open its own handle when needed and close it when done (handled by TileDataset.__del__).
 
     # Allocate shared weight map once
     w_map = (
@@ -363,7 +363,6 @@ def run_model_and_stitch_logits(
         avg_by_head = {k: v for k, v in sum_maps.items()}
     else:
         avg_by_head = {k: finalize_canvas(v, w_map) for k, v in sum_maps.items()}
-    
 
     meta = StitchMeta(
         mask_h=mask_h,
