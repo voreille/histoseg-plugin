@@ -124,6 +124,7 @@ def build_tissue_geojson(
 
 def maybe_compute_demo_statistics(
     *,
+    pixel_area_um2: float,
     stitched_outputs: dict[str, torch.Tensor],
     processed_metadata: dict[str, Any] | None,
     manifest: Any,
@@ -151,10 +152,10 @@ def maybe_compute_demo_statistics(
         head_b_labels=manifest.output["logits_b"].labels,
         head_a_name="logits_a",
         head_b_name="logits_b",
-        head_b_safe_name="logits_b_conformal.safe",
         head_b_max_name="logits_b_conformal.max_possible",
         covered_mask_a_name="logits_a.covered_mask",
         covered_mask_b_name="logits_b.covered_mask",
+        pixel_area_um2=pixel_area_um2,
     )
 
 
@@ -270,6 +271,7 @@ def segment_wsi(
         processed_metadata=processed_metadata,
         manifest=manifest,
         covered_mask=covered_mask,
+        pixel_area_um2=stitch_result.meta.output_target_mpp ** 2,
     )
 
     logger.info("Converting outputs to GeoJSON for slide %s", req.slide_uri)
