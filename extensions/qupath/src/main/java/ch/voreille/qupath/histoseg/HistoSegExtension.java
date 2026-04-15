@@ -46,6 +46,10 @@ public class HistoSegExtension implements QuPathExtension {
     private static final String TISSUE_ENDPOINT = "/segment/tissue";
     private static final String WSI_SEGMENTATION_ENDPOINT = "/segment/wsi";
 
+    private static final String PROP_CLASS = "class";
+    private static final String PROP_OBJECT_NAME = "object_name";
+    private static final String PROP_HEAD_DISPLAY_NAME = "head_display_name";
+
     private static final GeometryFactory GEOMETRY_FACTORY = new GeometryFactory();
 
     @Override
@@ -72,15 +76,12 @@ public class HistoSegExtension implements QuPathExtension {
     }
 
     private void runTissueSegmentation(QuPathGUI qupath) {
-        var viewer = qupath.getViewer();
-        if (viewer == null || viewer.getImageData() == null) {
-            showError("HistoSeg", "No image open.");
+        ImageData<?> imageData = getCurrentImageData(qupath);
+        if (imageData == null) {
             return;
         }
 
-        ImageData<?> imageData = viewer.getImageData();
-        ImageServer<?> server = imageData.getServer();
-        String slideUri = getPrimaryUri(server.getURIs());
+        String slideUri = getSlideUri(imageData);
         if (slideUri == null) {
             showError("HistoSeg", "Could not determine slide URI.");
             return;
@@ -97,8 +98,7 @@ public class HistoSegExtension implements QuPathExtension {
         new Thread(() -> {
             try {
                 String responseBody = postJson(serverUrl + TISSUE_ENDPOINT, payload.toString());
-                List<PathObject> objects = featureCollectionStringToAnnotations(responseBody, "Tissue");
-
+                List<PathObject> objects = featureCollectionStringToAnnotations(responseBody, "Tissue", "Tissue");
                 Platform.runLater(() -> addObjectsToHierarchy(imageData, objects));
             } catch (Exception ex) {
                 Platform.runLater(() -> showError("HistoSeg", ex.toString()));
@@ -107,15 +107,12 @@ public class HistoSegExtension implements QuPathExtension {
     }
 
     private void runWSISegmentation(QuPathGUI qupath) {
-        var viewer = qupath.getViewer();
-        if (viewer == null || viewer.getImageData() == null) {
-            showError("HistoSeg", "No image open.");
+        ImageData<?> imageData = getCurrentImageData(qupath);
+        if (imageData == null) {
             return;
         }
 
-        ImageData<?> imageData = viewer.getImageData();
-        ImageServer<?> server = imageData.getServer();
-        String slideUri = getPrimaryUri(server.getURIs());
+        String slideUri = getSlideUri(imageData);
         if (slideUri == null) {
             showError("HistoSeg", "Could not determine slide URI.");
             return;
@@ -146,6 +143,20 @@ public class HistoSegExtension implements QuPathExtension {
         }, "HistoSeg-WSI").start();
     }
 
+    private static ImageData<?> getCurrentImageData(QuPathGUI qupath) {
+        var viewer = qupath.getViewer();
+        if (viewer == null || viewer.getImageData() == null) {
+            showError("HistoSeg", "No image open.");
+            return null;
+        }
+        return viewer.getImageData();
+    }
+
+    private static String getSlideUri(ImageData<?> imageData) {
+        ImageServer<?> server = imageData.getServer();
+        return getPrimaryUri(server.getURIs());
+    }
+
     private static class ParsedWSIResponse {
         final List<PathObject> objects;
         final JsonObject statisticsJson;
@@ -160,6 +171,7 @@ public class HistoSegExtension implements QuPathExtension {
         if (objects == null || objects.isEmpty()) {
             return;
         }
+
         var hierarchy = imageData.getHierarchy();
         hierarchy.addObjects(objects);
         hierarchy.fireHierarchyChangedEvent(HistoSegExtension.class);
@@ -181,7 +193,11 @@ public class HistoSegExtension implements QuPathExtension {
         return dlg.showAndWait()
                 .map(String::trim)
                 .filter(s -> !s.isBlank())
-                .map(url -> url.endsWith("/") ? url.substring(0, url.length() - 1) : url);
+                .map(HistoSegExtension::stripTrailingSlash);
+    }
+
+    private static String stripTrailingSlash(String url) {
+        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
     }
 
     private static JsonObject buildTissuePayload(String slideUri) {
@@ -237,6 +253,7 @@ public class HistoSegExtension implements QuPathExtension {
                 return uri.toString();
             }
         }
+
         return uris.iterator().next().toString();
     }
 
@@ -267,44 +284,46 @@ public class HistoSegExtension implements QuPathExtension {
         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
         List<PathObject> objects = new ArrayList<>();
 
-        if (root.has("tissue") && root.get("tissue").isJsonObject()) {
-            objects.addAll(featureCollectionObjectToAnnotations(root.getAsJsonObject("tissue"), "Tissue"));
+        JsonObject tissue = getObject(root, "tissue");
+        if (tissue != null) {
+            objects.addAll(featureCollectionObjectToAnnotations(tissue, "Tissue", "Tissue"));
         }
 
-        if (root.has("outputs") && root.get("outputs").isJsonObject()) {
-            JsonObject outputs = root.getAsJsonObject("outputs");
+        JsonObject outputs = getObject(root, "outputs");
+        if (outputs != null) {
             for (Map.Entry<String, JsonElement> entry : outputs.entrySet()) {
                 if (!entry.getValue().isJsonObject()) {
                     continue;
                 }
-                objects.addAll(featureCollectionObjectToAnnotations(entry.getValue().getAsJsonObject(), null));
+                objects.addAll(featureCollectionObjectToAnnotations(entry.getValue().getAsJsonObject(), null, null));
             }
         }
 
-        JsonObject statisticsJson = null;
-        if (root.has("statistics") && root.get("statistics").isJsonObject()) {
-            statisticsJson = root.getAsJsonObject("statistics");
-        }
-
+        JsonObject statisticsJson = getObject(root, "statistics");
         return new ParsedWSIResponse(objects, statisticsJson);
     }
 
-    private static List<PathObject> featureCollectionStringToAnnotations(String geojson, String fallbackClassName) {
+    private static List<PathObject> featureCollectionStringToAnnotations(
+            String geojson,
+            String fallbackClassName,
+            String fallbackObjectName
+    ) {
         JsonObject root = JsonParser.parseString(geojson).getAsJsonObject();
-        return featureCollectionObjectToAnnotations(root, fallbackClassName);
+        return featureCollectionObjectToAnnotations(root, fallbackClassName, fallbackObjectName);
     }
 
     private static List<PathObject> featureCollectionObjectToAnnotations(
             JsonObject featureCollection,
-            String fallbackClassName
+            String fallbackClassName,
+            String fallbackObjectName
     ) {
         List<PathObject> objects = new ArrayList<>();
 
-        if (featureCollection == null || !featureCollection.has("features") || !featureCollection.get("features").isJsonArray()) {
+        JsonArray features = getArray(featureCollection, "features");
+        if (features == null) {
             return objects;
         }
 
-        JsonArray features = featureCollection.getAsJsonArray("features");
         ImagePlane plane = ImagePlane.getDefaultPlane();
 
         for (JsonElement featureElement : features) {
@@ -318,7 +337,6 @@ public class HistoSegExtension implements QuPathExtension {
                 continue;
             }
 
-            String className = extractClassName(feature, fallbackClassName);
             Geometry geometry = geometryFromGeoJson(geometryObject);
             if (geometry == null || geometry.isEmpty()) {
                 continue;
@@ -329,7 +347,10 @@ public class HistoSegExtension implements QuPathExtension {
                 continue;
             }
 
-            objects.add(createAnnotationObject(roi, className));
+            String className = extractClassName(feature, fallbackClassName);
+            String objectName = extractObjectName(feature, fallbackObjectName);
+
+            objects.add(createAnnotationObject(roi, className, objectName));
         }
 
         return objects;
@@ -342,15 +363,46 @@ public class HistoSegExtension implements QuPathExtension {
         return parent.getAsJsonObject(key);
     }
 
+    private static JsonArray getArray(JsonObject parent, String key) {
+        if (parent == null || !parent.has(key) || !parent.get(key).isJsonArray()) {
+            return null;
+        }
+        return parent.getAsJsonArray(key);
+    }
+
+    private static String getString(JsonObject parent, String key) {
+        if (parent == null || !parent.has(key) || parent.get(key).isJsonNull()) {
+            return null;
+        }
+
+        String value = parent.get(key).getAsString();
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+
+        return value;
+    }
+
     private static String extractClassName(JsonObject feature, String fallbackClassName) {
         JsonObject properties = getObject(feature, "properties");
-        if (properties != null && properties.has("class") && !properties.get("class").isJsonNull()) {
-            String value = properties.get("class").getAsString();
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
+        String className = getString(properties, PROP_CLASS);
+        return className != null ? className : fallbackClassName;
+    }
+
+    private static String extractObjectName(JsonObject feature, String fallbackObjectName) {
+        JsonObject properties = getObject(feature, "properties");
+
+        String objectName = getString(properties, PROP_OBJECT_NAME);
+        if (objectName != null) {
+            return objectName;
         }
-        return fallbackClassName;
+
+        String headDisplayName = getString(properties, PROP_HEAD_DISPLAY_NAME);
+        if (headDisplayName != null) {
+            return headDisplayName;
+        }
+
+        return fallbackObjectName;
     }
 
     private static Geometry geometryFromGeoJson(JsonObject geom) {
@@ -514,15 +566,25 @@ public class HistoSegExtension implements QuPathExtension {
         if (parent == null || index < 0 || index >= parent.size()) {
             return null;
         }
+
         JsonElement element = parent.get(index);
         return element != null && element.isJsonArray() ? element.getAsJsonArray() : null;
     }
 
-    private static PathObject createAnnotationObject(ROI roi, String className) {
+    private static PathObject createAnnotationObject(ROI roi, String className, String objectName) {
+        PathObject object;
+
         if (className != null && !className.isBlank()) {
             PathClass pathClass = PathClass.fromString(className);
-            return PathObjects.createAnnotationObject(roi, pathClass);
+            object = PathObjects.createAnnotationObject(roi, pathClass);
+        } else {
+            object = PathObjects.createAnnotationObject(roi);
         }
-        return PathObjects.createAnnotationObject(roi);
+
+        if (objectName != null && !objectName.isBlank()) {
+            object.setName(objectName);
+        }
+
+        return object;
     }
 }
