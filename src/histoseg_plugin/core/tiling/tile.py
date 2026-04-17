@@ -2,7 +2,7 @@ from typing import Optional, Tuple
 import numpy as np
 import openslide
 
-from histoseg_plugin.tiling.contours_processing import process_contour
+from .contours_processing import process_contour
 
 
 def generate_tiles_from_tissue(

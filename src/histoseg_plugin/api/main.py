@@ -11,8 +11,8 @@ from histoseg_plugin.api.routes.segment import router as segmentation_router
 from histoseg_plugin.core.inference.loader import load_inference_bundle
 
 # MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/AIgrading_anorak")
-# MODEL_DIR = Path("/mnt/nas7/data/Personal/Valentin/models/pathseg-benchmark/anorak-ignite/models/giddy-spaceship-137")
-MODEL_DIR = Path("/mnt/nas7/data/Personal/Valentin/models/pathseg-benchmark/anorak-ignite/models/fragrant-music-139")
+MODEL_DIR = Path("/mnt/nas7/data/Personal/Valentin/models/pathseg-benchmark/anorak-ignite/models/giddy-spaceship-137")
+# MODEL_DIR = Path("/mnt/nas7/data/Personal/Valentin/models/pathseg-benchmark/anorak-ignite/models/fragrant-music-139")
 # MODEL_DIR = Path("/home/valentin/workspaces/ignite-data-toolkit/data/models/he_export")
 # MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/models/spinning-peach-46")
 
