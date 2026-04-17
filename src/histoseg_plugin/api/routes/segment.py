@@ -271,7 +271,7 @@ def segment_wsi(
         processed_metadata=processed_metadata,
         manifest=manifest,
         covered_mask=covered_mask,
-        pixel_area_um2=stitch_result.meta.output_target_mpp ** 2,
+        pixel_area_um2=stitch_result.meta.output_target_mpp**2,
     )
 
     logger.info("Converting outputs to GeoJSON for slide %s", req.slide_uri)
@@ -302,6 +302,10 @@ def segment_wsi(
             open_kernel=3,
             min_object_area=200,
             max_hole_area=200,
+            props_common={
+                "head_display_name": spec.display_name or head_name,
+                "object_name": spec.display_name or head_name,
+            },  # TODO: if display name becomes central, make it more explicit than relying on props_common
         )
         outputs[head_name] = GeoJSONFeatureCollection(**geojson)
 
