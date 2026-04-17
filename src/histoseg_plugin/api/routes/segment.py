@@ -29,7 +29,7 @@ from histoseg_plugin.core.segmentation.segment import (
 from histoseg_plugin.core.tiling.tile import generate_tiles_from_tissue
 from histoseg_plugin.core.tissue.geojson import contours_to_geojson_features
 from histoseg_plugin.io.slide import assert_allowed_root, slide_uri_to_path
-from histoseg_plugin.wsi_core.segmentation import segment_tissue
+from histoseg_plugin.core.tissue.segmentation import segment_tissue
 
 router = APIRouter(prefix="/segment", tags=["segmentation"])
 logger = logging.getLogger(__name__)

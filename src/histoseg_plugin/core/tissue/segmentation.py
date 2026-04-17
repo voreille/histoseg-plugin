@@ -7,7 +7,7 @@ from typing import List, Tuple
 import cv2
 import numpy as np
 
-from .geometry import compute_level_downsamples, scale_contours, scale_holes
+from histoseg_plugin.core.wsi.geometry import compute_level_downsamples, scale_contours, scale_holes
 
 Array = np.ndarray
 
