@@ -35,7 +35,7 @@ services:
       - "5679:5678"
     user: "${UID}:${GID}"
     restart: unless-stopped
-    shm_size: "8gb"
+    shm_size: "128gb"
 
 
   worker:
@@ -72,4 +72,4 @@ services:
       - "5678:5678"
     user: "${UID}:${GID}"
     restart: unless-stopped
-    shm_size: "8gb"
+    shm_size: "128gb"

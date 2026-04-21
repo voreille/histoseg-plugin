@@ -1,7 +1,6 @@
 # contours_processing.py
 from __future__ import annotations
 
-import logging
 import multiprocessing as mp
 from typing import Optional, Tuple, Union
 
@@ -14,7 +13,6 @@ from .contour_checker import (
 )
 from .geometry import compute_level_downsamples
 
-logger = logging.getLogger(__name__)
 
 
 def _is_in_holes(holes, pt, patch_size: int) -> bool:
@@ -123,21 +121,14 @@ def process_contour(
     x_coords, y_coords = np.meshgrid(x_range, y_range, indexing="ij")
     coord_candidates = np.stack([x_coords.ravel(), y_coords.ravel()], axis=1)
 
-    # multiprocessing evaluation
-    results = [
-        _process_coord_candidate(
-            tuple(coord), contour_holes, ref_patch_w, cont_check_fn
-        )
-        for coord in coord_candidates
-    ]
-
-    # workers = min(max_workers, mp.cpu_count())
-    # with mp.Pool(workers) as pool:
-    #     iterable = [
-    #         (tuple(coord), contour_holes, ref_patch_w, cont_check_fn)
-    #         for coord in coord_candidates
-    #     ]
-    #     results = pool.starmap(_process_coord_candidate, iterable)
+    ctx = mp.get_context("forkserver")   # or "forkserver" on Linux
+    workers = min(max_workers, mp.cpu_count())
+    with ctx.Pool(workers) as pool:
+        iterable = [
+            (tuple(coord), contour_holes, ref_patch_w, cont_check_fn)
+            for coord in coord_candidates
+        ]
+        results = pool.starmap(_process_coord_candidate, iterable)
 
     coords = np.array([r for r in results if r is not None], dtype=np.int32)
     if coords.size == 0:
