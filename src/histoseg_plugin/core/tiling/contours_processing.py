@@ -1,8 +1,9 @@
 # contours_processing.py
 from __future__ import annotations
 
+import logging
 import multiprocessing as mp
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -12,6 +13,8 @@ from .contour_checker import (
     build_contour_checker,
 )
 from .geometry import compute_level_downsamples
+
+logger = logging.getLogger(__name__)
 
 
 def _is_in_holes(holes, pt, patch_size: int) -> bool:
@@ -23,17 +26,20 @@ def _is_in_holes(holes, pt, patch_size: int) -> bool:
     return False
 
 
-def _is_in_contours(cont_check_fn: Contour_Checking_fn, pt, holes,
-                    patch_size: int) -> bool:
+def _is_in_contours(
+    cont_check_fn: Contour_Checking_fn, pt, holes, patch_size: int
+) -> bool:
     if not cont_check_fn(pt):
         return False
     return not _is_in_holes(holes, pt, patch_size)
 
 
-def _process_coord_candidate(coord, contour_holes, ref_patch_size,
-                             cont_check_fn):
-    return coord if _is_in_contours(cont_check_fn, coord, contour_holes,
-                                    ref_patch_size) else None
+def _process_coord_candidate(coord, contour_holes, ref_patch_size, cont_check_fn):
+    return (
+        coord
+        if _is_in_contours(cont_check_fn, coord, contour_holes, ref_patch_size)
+        else None
+    )
 
 
 # ---------- main API ----------
@@ -99,7 +105,8 @@ def process_contour(
             contour_fn,
             contour=contour,
             patch_size=ref_patch_w,
-            center_shift=center_shift)
+            center_shift=center_shift,
+        )
     else:
         cont_check_fn = contour_fn  # already a callable conforming to the protocol
 
@@ -117,11 +124,20 @@ def process_contour(
     coord_candidates = np.stack([x_coords.ravel(), y_coords.ravel()], axis=1)
 
     # multiprocessing evaluation
-    workers = min(max_workers, mp.cpu_count())
-    with mp.Pool(workers) as pool:
-        iterable = [(tuple(coord), contour_holes, ref_patch_w, cont_check_fn)
-                    for coord in coord_candidates]
-        results = pool.starmap(_process_coord_candidate, iterable)
+    results = [
+        _process_coord_candidate(
+            tuple(coord), contour_holes, ref_patch_w, cont_check_fn
+        )
+        for coord in coord_candidates
+    ]
+
+    # workers = min(max_workers, mp.cpu_count())
+    # with mp.Pool(workers) as pool:
+    #     iterable = [
+    #         (tuple(coord), contour_holes, ref_patch_w, cont_check_fn)
+    #         for coord in coord_candidates
+    #     ]
+    #     results = pool.starmap(_process_coord_candidate, iterable)
 
     coords = np.array([r for r in results if r is not None], dtype=np.int32)
     if coords.size == 0:

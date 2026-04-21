@@ -1,0 +1,25 @@
+queue_db_url: sqlite:///./histoseg_queue.db
+
+results_root: ./results
+models_root: ./models/anorak-ignite/models
+logs_root: ./logs
+
+worker_poll_interval_seconds: 1.0
+worker_heartbeat_seconds: 5.0
+gpu_idle_unload_seconds: 300
+stale_task_timeout_seconds: 60
+
+default_model_id: default
+preferred_device: cuda
+use_amp: true
+
+tiling:
+  overlap_ratio: 0.25
+
+tissue:
+  enabled: true
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  reload: false

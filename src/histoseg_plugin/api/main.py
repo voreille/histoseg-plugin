@@ -1,20 +1,19 @@
-# TODO: add an env or config handling for the app
 import logging
-from pathlib import Path
 
 import torch
 from fastapi import FastAPI
 from fastapi.concurrency import asynccontextmanager
 
 from histoseg_plugin.api.logging import setup_logging
+from histoseg_plugin.api.routes.jobs import router as jobs_router
+from histoseg_plugin.api.routes.queue import router as queue_router
 from histoseg_plugin.api.routes.segment import router as segmentation_router
 from histoseg_plugin.core.inference.loader import load_inference_bundle
+from histoseg_plugin.settings import get_settings
 
-# MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/AIgrading_anorak")
-MODEL_DIR = Path("/mnt/nas7/data/Personal/Valentin/models/pathseg-benchmark/anorak-ignite/models/giddy-spaceship-137")
-# MODEL_DIR = Path("/mnt/nas7/data/Personal/Valentin/models/pathseg-benchmark/anorak-ignite/models/fragrant-music-139")
-# MODEL_DIR = Path("/home/valentin/workspaces/ignite-data-toolkit/data/models/he_export")
-# MODEL_DIR = Path("/home/valentin/workspaces/histoseg-plugin/models/models/spinning-peach-46")
+
+settings = get_settings()
+MODEL_DIR = settings.models_root / "giddy-spaceship-137"
 
 setup_logging(level="DEBUG")
 
@@ -24,7 +23,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     logger.info("Loading model bundle from %s", MODEL_DIR)
 
@@ -34,6 +33,11 @@ async def lifespan(app: FastAPI):
     app.state.device = device
 
     logger.info("Model loaded on device %s", device)
+    if settings.debug:
+        logger.info("Waiting for debugger attach...")
+        import debugpy
+        debugpy.listen(("0.0.0.0", 5678))
+        print("debugpy listening on 0.0.0.0:5678")
 
     yield
 
@@ -43,6 +47,8 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(title="histoseg", lifespan=lifespan)
     app.include_router(segmentation_router)
+    app.include_router(jobs_router)
+    app.include_router(queue_router)
     return app
 
 

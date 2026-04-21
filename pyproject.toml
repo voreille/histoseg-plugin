@@ -6,55 +6,35 @@ build-backend = "setuptools.build_meta"
 name = "histoseg-plugin"
 version = "0.1.0"
 description = "A FastAPI core for histopathology pipelines with pluggable viewer adapters"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2,<3",
+    "pydantic-settings",
     "pyyaml",
-]
-
-[project.optional-dependencies]
-api = [
     "fastapi",
     "uvicorn[standard]",
-]
-
-cli = [
+    "SQLAlchemy",
     "click",
     "tqdm",
-]
-
-wsi = [
     "numpy",
     "opencv-python",
     "openslide-python",
-    "openslide-bin",
     "pillow",
     "h5py",
     "matplotlib",
 ]
 
+[project.optional-dependencies]
 test = [
     "pytest>=7.0",
     "pytest-mock>=3.0",
     "pytest-cov>=4.0",
 ]
 
-embed-cpu = [
-    "torch==2.4.*",
-    "torchvision==0.19.*",
-    "torchaudio==2.4.*",
+dev = [
+    "histoseg-plugin[test]",
 ]
-
-full = [
-    "histoseg-plugin[api,cli,wsi]",
-]
-
-[project.scripts]
-histoseg-tile = "histoseg_plugin.tiling.create_patches:main"
-histoseg-embed = "histoseg_plugin.embedding.extract_features:main"
-
-[project.entry-points."histoseg_plugin.models"]
-test_resnet50 = "histoseg_plugin.models.builtin.test_resnet50.load:load"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["histoseg_plugin*"]
