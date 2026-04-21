@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+from histoseg_plugin.core.geojson.schemas import GeoJSONFeatureCollection
+from histoseg_plugin.core.postprocessing.schemas import DemoPatternStatistics
 
 
 class TissueSegmentationParams(BaseModel):
     slide_uri: str = Field(..., description="file:/... or file:///... or absolute path")
-    seg_level: int = -1
+    tissue_seg_level: int = -1
 
     sthresh: int = 20
     sthresh_up: int = 255
@@ -43,54 +46,9 @@ class WSISegmentationRequest(TissueSegmentationParams):
     bot_right: Optional[List[int]] = None
     max_workers: int = 4  # for the tiling
 
-    output_target_mpp: float = 4.0
-    batch_size: int = 16
-    num_workers: int = 0
-
-
-class PolygonGeometry(BaseModel):
-    type: Literal["Polygon"]
-    coordinates: List[List[List[float]]]
-
-
-class MultiPolygonGeometry(BaseModel):
-    type: Literal["MultiPolygon"]
-    coordinates: List[List[List[List[float]]]]
-
-
-class GeoJSONFeature(BaseModel):
-    type: Literal["Feature"] = "Feature"
-    properties: Dict[str, Any] = Field(default_factory=dict)
-    geometry: Union[PolygonGeometry, MultiPolygonGeometry]
-
-
-class GeoJSONFeatureCollection(BaseModel):
-    type: Literal["FeatureCollection"] = "FeatureCollection"
-    features: List[GeoJSONFeature]
-
-
-class PatternBoundStats(BaseModel):
-    pattern_id: int
-    safe_area_px: int
-    argmax_area_px: int
-    max_area_px: int
-    safe_ratio: float
-    argmax_ratio: float
-    max_ratio: float
-
-
-class CompartmentPatternStats(BaseModel):
-    compartment_id: int
-    area_px: int
-    area_um2: float
-    patterns: dict[str, PatternBoundStats] = Field(default_factory=dict)
-
-
-class DemoPatternStatistics(BaseModel):
-    head_b_foreground_area_px: int
-    head_b_foreground_area_um2: float
-    patterns: dict[str, PatternBoundStats] = Field(default_factory=dict)
-    compartments: dict[str, CompartmentPatternStats] = Field(default_factory=dict)
+    output_target_mpp: float = 2.0
+    batch_size: int = 32
+    num_workers: int = 8
 
 
 class WSISegmentationResponse(BaseModel):

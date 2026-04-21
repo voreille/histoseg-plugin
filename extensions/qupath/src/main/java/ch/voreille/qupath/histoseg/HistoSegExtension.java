@@ -236,9 +236,9 @@ public class HistoSegExtension implements QuPathExtension {
         payload.addProperty("use_padding", true);
         payload.addProperty("max_workers", 4);
 
-        payload.addProperty("output_target_mpp", 4.0);
-        payload.addProperty("batch_size", 8);
-        payload.addProperty("num_workers", 0);
+        payload.addProperty("output_target_mpp", 2.0);
+        payload.addProperty("batch_size", 16);
+        payload.addProperty("num_workers", 8);
 
         return payload;
     }

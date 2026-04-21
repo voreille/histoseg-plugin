@@ -49,7 +49,7 @@ def tissue_contours(req: TissueContoursRequest) -> GeoJSONFeatureCollection:
         raise HTTPException(status_code=403, detail=str(e))
 
     with open_wsi(slide_path) as wsi:
-        seg_level = normalize_seg_level(req.seg_level, wsi.level_count)
+        seg_level = normalize_seg_level(req.tissue_seg_level, wsi.level_count)
 
         # If you want: only catch expected errors here; otherwise let it raise
         try:

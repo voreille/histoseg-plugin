@@ -4,7 +4,7 @@ from typing import Any
 
 import torch
 
-from histoseg_plugin.api.schemas import (
+from .schemas import (
     CompartmentPatternStats,
     DemoPatternStatistics,
     PatternBoundStats,
