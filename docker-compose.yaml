@@ -1,75 +1,38 @@
+x-histoseg-common: &histoseg-common
+  image: histoseg-plugin:dev
+  environment:
+    HISTOSEG_CONFIG: /app/config/settings-dev.yaml
+    HOME: /app
+    HF_HOME: /app/.cache/huggingface
+  working_dir: /app
+  user: "${UID}:${GID}"
+  restart: unless-stopped
+  shm_size: "8gb"
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [ gpu ]
+
+
 services:
   api:
+    <<: *histoseg-common
     build:
-      context: /home/valentin/workspaces
+      context: /home/val/workspaces
       dockerfile: histoseg-plugin/Dockerfile
     container_name: histoseg-api
     command: >
-      uvicorn histoseg_plugin.api.main:create_app --factory --host 0.0.0.0
-      --port 8000
-    environment:
-      HISTOSEG_CONFIG: /app/config/${CONFIG_FILE:-settings-dev.yaml}
-      HOME: /app
-      HF_HOME: /app/.cache/huggingface
-    working_dir: /app
-    volumes:
-      - .:/app
-      - ${HOST_CONFIG_DIR}:/app/config
-      - ${HOST_DATA_DIR}:/app/data
-      - ${HOST_RESULTS_DIR}:/app/results
-      - ${HOST_MODELS_DIR}:/app/models:ro
-      - ${HOST_LOGS_DIR}:/app/logs
-      - ../pathseg-benchmark:/opt/pathseg-benchmark
-      - ~/.cache/huggingface:/app/.cache/huggingface
-      - /mnt/nas7:/mnt/nas7:ro
-      - /mnt/nas6:/mnt/nas6:ro
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
+      uvicorn histoseg_plugin.api.main:create_app --factory --host 0.0.0.0 --port 8000
     ports:
-      - "8000:8000"
+      - "8090:8000"
       - "5679:5678"
-    user: "${UID}:${GID}"
-    restart: unless-stopped
-    shm_size: "128gb"
-
 
   worker:
-    build:
-      context: /home/valentin/workspaces
-      dockerfile: histoseg-plugin/Dockerfile
+    <<: *histoseg-common
     container_name: histoseg-worker
-    command: >
-      python -m histoseg_plugin.jobs.worker_main
-    environment:
-      HISTOSEG_CONFIG: /app/config/${CONFIG_FILE:-settings-dev.yaml}
-      HOME: /app
-      HF_HOME: /app/.cache/huggingface
-    working_dir: /app
-    volumes:
-      - .:/app
-      - ${HOST_CONFIG_DIR}:/app/config
-      - ${HOST_DATA_DIR}:/app/data
-      - ${HOST_RESULTS_DIR}:/app/results
-      - ${HOST_MODELS_DIR}:/app/models:ro
-      - ${HOST_LOGS_DIR}:/app/logs
-      - ../pathseg-benchmark:/opt/pathseg-benchmark
-      - ~/.cache/huggingface:/app/.cache/huggingface
-      - /mnt/nas7:/mnt/nas7:ro
-      - /mnt/nas6:/mnt/nas6:ro
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
+    command: python -m histoseg_plugin.jobs.worker_main
     ports:
       - "5678:5678"
-    user: "${UID}:${GID}"
-    restart: unless-stopped
-    shm_size: "128gb"

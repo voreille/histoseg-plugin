@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from histoseg_plugin.jobs.db import get_session
-from histoseg_plugin.jobs.queue_service import pause_queue, resume_queue, is_queue_paused
+from histoseg_plugin.jobs.queue_ops import pause_queue, resume_queue, is_queue_paused
 
 router = APIRouter(prefix="/queue", tags=["queue"])
 

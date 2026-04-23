@@ -1,11 +1,9 @@
-from __future__ import annotations
-
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-
+import os
 import yaml
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -13,11 +11,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     queue_db_url: str = "sqlite:///./histoseg_queue.db"
 
+    allowed_roots: list[Path] = Field(
+        default_factory=lambda: [Path("/mnt/nas6"), Path("/mnt/nas7")]
+    )
+
     debug: bool = False
 
-    results_root: Path = Field(default=Path("./results"))
-    models_root: Path = Field(default=Path("./models"))
-    logs_root: Path = Field(default=Path("./logs"))
+    results_root: Path = Path("./results")
+    models_root: Path = Path("./models")
+    logs_root: Path = Path("./logs")
 
     worker_poll_interval_seconds: float = 1.0
     worker_heartbeat_seconds: float = 5.0
@@ -46,17 +48,21 @@ def _load_yaml_config(path: Path) -> dict[str, Any]:
     return data
 
 
-@lru_cache(maxsize=1)
-def get_settings(config_path: str | None = None) -> Settings:
-    path_str = config_path or os.environ.get("HISTOSEG_CONFIG") or "config/settings.yaml"
-    config_file = Path(path_str).resolve()
+def build_settings(config_path: str | None = None) -> Settings:
+    path_str = (
+        config_path or os.environ.get("HISTOSEG_CONFIG") or "config/settings.yaml"
+    )
+    yaml_data = _load_yaml_config(Path(path_str).resolve())
+    return Settings(**yaml_data)
 
-    yaml_data = _load_yaml_config(config_file)
 
-    settings = Settings(**yaml_data)
-
+def ensure_settings_dirs(settings: Settings) -> Settings:
     settings.results_root.mkdir(parents=True, exist_ok=True)
     settings.models_root.mkdir(parents=True, exist_ok=True)
     settings.logs_root.mkdir(parents=True, exist_ok=True)
-
     return settings
+
+
+@lru_cache(maxsize=1)
+def get_settings(config_path: str | None = None) -> Settings:
+    return ensure_settings_dirs(build_settings(config_path))

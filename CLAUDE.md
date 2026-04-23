@@ -4,254 +4,238 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**histoseg-plugin** is a digital pathology project centered on **whole slide image (WSI) processing**.
+**histoseg-plugin** is a digital pathology backend for **whole slide image (WSI) segmentation and annotation**.
 
-There are two relevant parts of the codebase:
+The project is now centered on a **Dockerized FastAPI + worker architecture** with a DB-backed queue. The goal is to expose WSI segmentation to external clients such as **QuPath**, while keeping the heavy processing logic reusable from both:
 
-1. **Existing tiling / preprocessing pipeline**
+- synchronous API routes for debugging and development
+- asynchronous background workers for real usage
+
+There are two main layers in the codebase:
+
+1. **API / orchestration layer**
+   - FastAPI routes
+   - request / response schemas
+   - queue / job submission
+   - job status / result retrieval
+   - Docker deployment
+
+2. **Core processing layer**
    - tissue segmentation
-   - patch coordinate extraction
-   - stitched visualization
-   - storage in HDF5 / YAML
+   - tile generation
+   - model inference
+   - logit stitching
+   - postprocessing
+   - GeoJSON generation
+   - statistics / quantitative outputs
 
-2. **Active Prototype v2 development**
-   - FastAPI-based WSI segmentation service
-   - tile-level model inference
-   - stitched whole-slide predictions
-   - GeoJSON annotation output
-   - quantitative feature computation
-   - prototype-based segmentation from user-selected support ROIs
+The active development target is the **containerized FastAPI + worker system**, not the older preprocessing / tiling CLI workflows.
 
-The active development target is **Prototype v2**, not the older batch tiling CLI.
+---
 
-## Current Priorities (Prototype v2)
+## Current Priorities
 
 Focus on these tasks first:
 
-1. Refactor `POST /segment/wsi` into a reusable `WSIPipeline`
-2. Add quantitative feature computation to responses
-3. Implement support ROI storage on the filesystem
-4. Implement full-WSI prototype segmentation using saved support sets
+1. Keep the core WSI segmentation pipeline reusable from both API routes and workers
+2. Finalize the DB-backed queue / job / task execution flow
+3. Keep routes thin and move processing logic into `core/`
+4. Persist results on disk and metadata in DB
+5. Maintain a clean Docker-based dev workflow with API + worker services
+6. Preserve a clear separation between:
+   - API schemas
+   - core runtime contracts
+   - core shared schemas
 
-Explicitly **out of scope** for v2:
+---
 
-- batch processing of multiple WSIs
-- database integration
-- async job queues
-- persistent caching of full segmentation outputs
-- polished model-zoo UI
-- Sectra-specific integration logic
+## Architecture Overview
 
-## Critical Invariants (DO NOT BREAK)
+### Main components
 
-These rules are essential.
+#### 1. API service
+- Receives HTTP requests
+- Validates payloads
+- Resolves slide URIs
+- Creates jobs/tasks
+- Returns status/results
 
-- **All coordinates are expressed in level-0 space**
-- Tile coordinates are always **level-0 top-left coordinates**
-- GeoJSON outputs must always be in **level-0 coordinates**
-- Stitching uses **weighted accumulation**:
-  - accumulate logits into a sum canvas
-  - accumulate weights into a weight canvas
-  - final logits = sum / weight
-- Background classes must **not** be converted to output polygons unless explicitly requested
-- Do not silently change MPP / level-selection conventions
-- Do not introduce a second competing tiling or stitching implementation
+#### 2. Worker service
+- Polls DB
+- Claims tasks
+- Runs segmentation pipeline
+- Writes results
+- Updates DB
 
-Violating these invariants will break downstream consumers such as QuPath and feature computation.
+#### 3. Database
+- Queue state
+- Jobs
+- Tasks
+- Results metadata
 
-## Prototype v2 Pipeline
+#### 4. Filesystem
+- GeoJSON outputs
+- Stats
+- Models
+- Logs
 
-Prototype v2 performs whole-slide segmentation with the following steps:
+---
 
-1. Tissue segmentation
-2. Tile generation inside tissue regions
-3. Tile-level prediction using a predictor
-4. Logit stitching into a whole-slide canvas
-5. Conversion of logits to GeoJSON annotations
-6. Feature computation per head / class
+## Layering Rules (IMPORTANT)
 
-High-level flow:
+Dependencies:
 
-```text
-WSI
- └── Tissue segmentation
-      └── Tile generation
-           └── Predictor
-                └── Logit stitching
-                     └── GeoJSON conversion
-                     └── Feature computation
-```
+    api    -> core
+    worker -> core
+    core   -> core
 
-## Predictor-Agnostic Design
+**Core must not import from API**
 
-The WSI pipeline must be **predictor-agnostic**.
+---
 
-Standard model inference and prototype inference must reuse the same orchestration code. The only difference should be the predictor implementation.
+## Core Runtime Contracts
 
-### TilePredictor contract
+Defined in `core.pipeline.contracts`:
 
-```python
-predict_tiles(tiles: Tensor) -> dict[str, Tensor]
-```
+- `WSISegmentationInput`
+- `WSISegmentationResult`
 
-Expected behavior:
+Key idea:
+- API converts request → input contract
+- Core processes
+- Core returns result contract
+- API converts → response
 
-- Input: batch of image tiles with shape `(B, C, H, W)`
-- Output: dictionary mapping `head_name -> logits`
-- Each logit tensor should normally have shape `(B, K, H, W)`
-- Batch dimension must be preserved
-- Spatial alignment with the input tile must be preserved
-- Predictor implementations should not silently change coordinate space
+---
 
-Planned implementations:
+## Shared Schemas
 
-- `ModelRunnerPredictor` → standard deep learning model
-- `PrototypePredictor` → prototype-based inference from saved support ROIs
+Use `schemas.py` for Pydantic shared structures:
 
-## Whole-Slide Prototype Segmentation
+- `core.geojson.schemas`
+- `core.postprocessing.schemas`
 
-Prototype inference is required to run on the **full WSI**, not only on selected ROIs.
+Rule:
 
-Reason:
-ROI-only inference hides important failure modes such as:
-- false positives in non-cancer tissue
-- poor generalization outside support regions
-- spurious prototype activation in unrelated tissue structures
+- Pydantic → schemas
+- Dataclasses → contracts
 
-Expected workflow:
+---
 
-1. User selects ROIs in QuPath
-2. ROIs are exported to the server with class labels
-3. Server stores crops as a support set
-4. Server computes prototypes from the support crops
-5. Full WSI is segmented using `PrototypePredictor`
+## WSI Segmentation Flow
 
-## API Endpoints (Prototype v2)
+Main function:
 
-### `POST /segment/wsi`
-Standard WSI segmentation.
+    run_wsi_segmentation(...)
 
-Returns:
-- tissue GeoJSON
-- per-head annotation GeoJSON
-- per-head quantitative features
+Pipeline:
 
-### `POST /prototype/wsi`
-Prototype-based WSI segmentation using a saved support set.
+    WSI
+     └── open slide
+          └── tissue segmentation
+               └── tile generation
+                    └── model inference
+                         └── logit stitching
+                              └── postprocessing
+                                   └── GeoJSON
+                                   └── statistics
 
-Returns:
-- same structure as `/segment/wsi`
+---
 
-### `POST /prototype/support/save`
-Save selected support ROIs from a WSI.
+## API Design
 
-Behavior:
-- crop ROIs from slide
-- store them on disk
-- associate them with a support set and class labels
+Routes must be thin.
 
-### `GET /prototype/support_sets`
-List available support sets and their classes.
+Example:
 
-## Feature Computation
+1. parse request
+2. resolve slide path
+3. build input contract
+4. call core
+5. build response
 
-For each output head and class, compute at least:
+---
 
-- `area_px_level0`
-- `area_mm2` when slide MPP is available
-- `n_objects` (connected components)
+## Queue Architecture
 
-Feature schema should stay separate from GeoJSON annotations.
+### Models
 
-## Support ROI Storage
+- Job
+- Task
+- Result
+- QueueState
 
-Use a simple **filesystem-based** storage scheme for prototype v2.
+### Workflow
 
-Suggested layout:
+Submission:
+- API creates job + tasks
 
-```text
-support_store/
-  support_set_<id>/
-    manifest.json
-    class_A/
-      roi_001.png
-      roi_001.json
-    class_B/
-      roi_002.png
-      roi_002.json
-```
+Worker:
+- poll
+- claim
+- process
+- store results
+- update DB
 
-Each ROI metadata file should contain at least:
+---
 
-- `slide_uri`
-- level-0 bounding box
-- class label
-- optional MPP metadata
+## QuPath Integration
 
-Do not introduce a database for this stage.
+Two modes:
 
-## Existing Codebase Context
+### Sync
+    POST /segment/wsi
 
-This repository already contains an older WSI tiling / preprocessing pipeline.
+### Async
+    POST /jobs
+    → poll status
+    → fetch results
 
-Important existing behaviors:
+---
 
-- coordinates are level-0
-- MPP-based level selection already exists
-- storage and job abstractions exist for tiling
-- some CLI / YAML job logic exists for older workflows
+## Docker Context
 
-That older code is useful context, but Prototype v2 should not be forced into the older batch/job architecture if that makes the FastAPI service harder to build.
+- API container
+- Worker container
+- Shared volumes
+- NAS mounted
+- HF token via env
+- debugpy enabled
 
-## Where To Implement Changes
+Multiprocessing:
 
-Preferred areas for new work:
+- use `forkserver` on Linux
+- increase `shm_size` if needed
 
-- API routes → `api/routes/`
-- Core WSI orchestration → `core/pipeline/`
-- Prediction abstractions → `core/inference/` or `core/predictors/`
-- GeoJSON conversion → `core/segmentation/geojson.py`
-- Feature computation → `core/features/`
-- Support ROI storage → `core/support/`
-- Model runtime / manifests → `core/model_runtime/`
+---
 
-If refactoring existing code:
-- keep routes thin
-- move logic out of route handlers
-- reuse existing utilities instead of duplicating them
+## Critical Invariants
 
-## Design Rules
+- All coords = level0
+- Tiles = level0 top-left
+- GeoJSON = level0
+- Stitching = weighted accumulation
+- No duplicate pipeline logic
+- No core → API dependency
 
-- Keep FastAPI routes thin
-- Put core logic in `core/`
-- Avoid duplicating tiling or stitching logic
-- Prefer modular predictors over branching pipelines
-- Keep storage filesystem-based for Prototype v2
-- Preserve coordinate conventions
-- Preserve existing working behavior unless the task explicitly asks for redesign
+---
 
-## Practical Guidance For Agents
+## Module Responsibilities
 
-When making changes:
+API:
+    api/routes/
+    api/schemas.py
 
-1. Propose structure first if the task is architectural
-2. Keep edits local and minimal when possible
-3. Do not rewrite unrelated legacy tiling code unless necessary
-4. If adding a new abstraction, explain how it connects to existing modules
-5. Prefer incremental refactors over broad rewrites
+Core:
+    core/pipeline/contracts.py
+    core/pipeline/wsi_segmentation.py
+    core/geojson/schemas.py
+    core/postprocessing/schemas.py
 
-## Testing Conventions
+---
 
-- Framework: `pytest`
-- One test file per module: `test_<module>.py` in `tests/`
-- Use fixtures for shared setup
-- Never require real WSI files — mock all slide I/O
-- Run `pytest -m "not slow"` after each implementation step
+## Testing
 
-## Non-Goals For This File
-
-This file is not intended to document:
-- all CLI usage
-- all legacy batch-processing features
-- all install instructions
-- all experiments
+- pytest
+- mock WSI I/O
+- no real slide dependency

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 from histoseg_plugin.jobs.db import get_session
-from histoseg_plugin.jobs.queue_service import submit_batch, get_job
+from histoseg_plugin.jobs.queue_ops import submit_batch, get_job
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 

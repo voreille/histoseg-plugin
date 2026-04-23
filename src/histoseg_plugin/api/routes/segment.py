@@ -21,13 +21,19 @@ from histoseg_plugin.core.tissue.segmentation import segment_tissue
 from histoseg_plugin.core.pipeline.wsi_segmentation import run_wsi_segmentation
 from histoseg_plugin.core.pipeline.contracts import (
     WSISegmentationInput,
-    WSISegmentationResult,
+    TissueSegmentationParams,
+    TilingParams,
+    InferenceParams,
 )
 
 router = APIRouter(prefix="/segment", tags=["segmentation"])
 logger = logging.getLogger(__name__)
 
-ALLOWED_ROOTS = [Path("/mnt/nas6"), Path("/mnt/nas7")]  # TODO: move to settings
+ALLOWED_ROOTS = [
+    Path("/mnt/nas6"),
+    Path("/mnt/nas7"),
+    Path("/home/val/data"),
+]  # TODO: move to settings
 
 
 def resolve_and_check_slide(slide_uri: str) -> Path:
@@ -66,21 +72,21 @@ def run_tissue_segmentation(
     wsi: openslide.OpenSlide,
     req: TissueContoursRequest | WSISegmentationRequest,
 ) -> tuple[list[Any], list[Any], int]:
-    seg_level = normalize_seg_level(req.tissue_seg_level, wsi.level_count)
+    seg_level = normalize_seg_level(req.tissue.seg_level, wsi.level_count)
 
     try:
         contours, holes = segment_tissue(
             wsi,
             seg_level=seg_level,
-            sthresh=req.sthresh,
-            sthresh_up=req.sthresh_up,
-            mthresh=req.mthresh,
-            close=req.close,
-            use_otsu=req.use_otsu,
-            filter_params=req.filter_params,
-            ref_patch_size=req.ref_patch_size,
-            exclude_ids=req.exclude_ids,
-            keep_ids=req.keep_ids,
+            sthresh=req.tissue.sthresh,
+            sthresh_up=req.tissue.sthresh_up,
+            mthresh=req.tissue.mthresh,
+            close=req.tissue.close,
+            use_otsu=req.tissue.use_otsu,
+            filter_params=req.tissue.filter_params,
+            ref_patch_size=req.tissue.ref_patch_size,
+            exclude_ids=req.tissue.exclude_ids,
+            keep_ids=req.tissue.keep_ids,
         )
     except HTTPException:
         raise
@@ -127,35 +133,41 @@ def segment_tissue_route(req: TissueContoursRequest) -> GeoJSONFeatureCollection
         holes=holes,
         seg_level=seg_level,
         slide_uri=req.slide_uri,
-        min_area_px_level0=req.min_area_px_level0,
+        min_area_px_level0=req.tissue.min_area_px_level0,
     )
 
 
-def get_wsi_segmentation_input(req: WSISegmentationRequest) -> WSISegmentationInput:
+def build_wsi_segmentation_input(req: WSISegmentationRequest) -> WSISegmentationInput:
     slide_path = resolve_and_check_slide(req.slide_uri)
 
     return WSISegmentationInput(
         slide_path=slide_path,
-        tissue_seg_level=req.tissue_seg_level,
-        sthresh=req.sthresh,
-        sthresh_up=req.sthresh_up,
-        mthresh=req.mthresh,
-        close=req.close,
-        use_otsu=req.use_otsu,
-        filter_params=req.filter_params,
-        ref_patch_size=req.ref_patch_size,
-        exclude_ids=req.exclude_ids or [],
-        keep_ids=req.keep_ids or [],
-        min_area_px_level0=req.min_area_px_level0,
-        contour_fn=req.contour_fn,
-        center_shift=req.center_shift,
-        use_padding=req.use_padding,
-        top_left=tuple(req.top_left) if req.top_left else None,
-        bot_right=tuple(req.bot_right) if req.bot_right else None,
-        max_workers=req.max_workers,
-        output_target_mpp=req.output_target_mpp,
-        batch_size=req.batch_size,
-        num_workers=req.num_workers,
+        tissue=TissueSegmentationParams(
+            seg_level=req.tissue.seg_level,
+            sthresh=req.tissue.sthresh,
+            sthresh_up=req.tissue.sthresh_up,
+            mthresh=req.tissue.mthresh,
+            close=req.tissue.close,
+            use_otsu=req.tissue.use_otsu,
+            filter_params=dict(req.tissue.filter_params),
+            ref_patch_size=req.tissue.ref_patch_size,
+            exclude_ids=list(req.tissue.exclude_ids),
+            keep_ids=list(req.tissue.keep_ids),
+            min_area_px_level0=req.tissue.min_area_px_level0,
+        ),
+        tiling=TilingParams(
+            contour_fn=req.tiling.contour_fn,
+            center_shift=req.tiling.center_shift,
+            use_padding=req.tiling.use_padding,
+            top_left=tuple(req.tiling.top_left) if req.tiling.top_left else None,
+            bot_right=tuple(req.tiling.bot_right) if req.tiling.bot_right else None,
+            max_workers=req.tiling.max_workers,
+        ),
+        inference=InferenceParams(
+            output_target_mpp=req.inference.output_target_mpp,
+            batch_size=req.inference.batch_size,
+            num_workers=req.inference.num_workers,
+        ),
     )
 
 
@@ -166,10 +178,17 @@ def segment_wsi_route(
 ) -> WSISegmentationResponse:
 
     bundle: InferenceBundle = request.app.state.inference_bundle
-    result = run_wsi_segmentation(
-        wsi_segmentation_input=get_wsi_segmentation_input(req),
-        inference_bundle=bundle,
-    )
+    try:
+        result = run_wsi_segmentation(
+            wsi_segmentation_input=build_wsi_segmentation_input(req),
+            inference_bundle=bundle,
+        )
+    except Exception as e:
+        logger.error(f"Error during WSI segmentation: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"WSI segmentation failed: {e}"
+        ) from e
+
     return WSISegmentationResponse(
         coords_space=result.coords_space,
         tissue=result.tissue,

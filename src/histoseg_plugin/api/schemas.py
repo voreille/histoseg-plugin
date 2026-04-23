@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Literal, Optional
+from typing import Dict, Literal
 
 from pydantic import BaseModel, Field
 
@@ -8,47 +8,48 @@ from histoseg_plugin.core.geojson.schemas import GeoJSONFeatureCollection
 from histoseg_plugin.core.postprocessing.schemas import DemoPatternStatistics
 
 
-class TissueSegmentationParams(BaseModel):
-    slide_uri: str = Field(..., description="file:/... or file:///... or absolute path")
-    tissue_seg_level: int = -1
-
+class TissueSegmentationConfig(BaseModel):
+    seg_level: int = -1
     sthresh: int = 20
     sthresh_up: int = 255
     mthresh: int = 7
     close: int = 0
     use_otsu: bool = False
-
-    filter_params: Dict[str, int] = Field(
+    filter_params: dict[str, int] = Field(
         default_factory=lambda: {"a_t": 100, "a_h": 16, "max_n_holes": 10}
     )
-
     ref_patch_size: int = 512
-    exclude_ids: Optional[List[int]] = None
-    keep_ids: Optional[List[int]] = None
-
+    exclude_ids: list[int] = Field(default_factory=list)
+    keep_ids: list[int] = Field(default_factory=list)
     min_area_px_level0: int = 0
     simplify_tol_px_level0: float = 0.0
 
 
-class TissueContoursRequest(TissueSegmentationParams):
-    pass
-
-
-class WSISegmentationRequest(TissueSegmentationParams):
-    patch_level: int = 0
-    patch_size: int = 512
-    step_size: int = 512
-
+class TilingConfig(BaseModel):
     contour_fn: str = "four_pt"
     center_shift: float = 0.5
     use_padding: bool = True
-    top_left: Optional[List[int]] = None
-    bot_right: Optional[List[int]] = None
-    max_workers: int = 4  # for the tiling
+    top_left: list[int] | None = None
+    bot_right: list[int] | None = None
+    max_workers: int = 4
 
+
+class InferenceConfig(BaseModel):
     output_target_mpp: float = 2.0
     batch_size: int = 32
     num_workers: int = 8
+
+
+class TissueContoursRequest(BaseModel):
+    slide_uri: str
+    tissue: TissueSegmentationConfig = Field(default_factory=TissueSegmentationConfig)
+
+
+class WSISegmentationRequest(BaseModel):
+    slide_uri: str
+    tissue: TissueSegmentationConfig = Field(default_factory=TissueSegmentationConfig)
+    tiling: TilingConfig = Field(default_factory=TilingConfig)
+    inference: InferenceConfig = Field(default_factory=InferenceConfig)
 
 
 class WSISegmentationResponse(BaseModel):

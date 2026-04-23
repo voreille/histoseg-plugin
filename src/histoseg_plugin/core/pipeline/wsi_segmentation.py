@@ -100,21 +100,21 @@ def run_tissue_segmentation(
     wsi: openslide.OpenSlide,
     wsi_segmentation_input: WSISegmentationInput,
 ) -> tuple[list[Any], list[Any], int]:
-    seg_level = normalize_seg_level(wsi_segmentation_input.tissue_seg_level, wsi.level_count)
+    seg_level = normalize_seg_level(wsi_segmentation_input.tissue.seg_level, wsi.level_count)
 
     try:
         contours, holes = segment_tissue(
             wsi,
             seg_level=seg_level,
-            sthresh=wsi_segmentation_input.sthresh,
-            sthresh_up=wsi_segmentation_input.sthresh_up,
-            mthresh=wsi_segmentation_input.mthresh,
-            close=wsi_segmentation_input.close,
-            use_otsu=wsi_segmentation_input.use_otsu,
-            filter_params=wsi_segmentation_input.filter_params,
-            ref_patch_size=wsi_segmentation_input.ref_patch_size,
-            exclude_ids=wsi_segmentation_input.exclude_ids,
-            keep_ids=wsi_segmentation_input.keep_ids,
+            sthresh=wsi_segmentation_input.tissue.sthresh,
+            sthresh_up=wsi_segmentation_input.tissue.sthresh_up,
+            mthresh=wsi_segmentation_input.tissue.mthresh,
+            close=wsi_segmentation_input.tissue.close,
+            use_otsu=wsi_segmentation_input.tissue.use_otsu,
+            filter_params=wsi_segmentation_input.tissue.filter_params,
+            ref_patch_size=wsi_segmentation_input.tissue.ref_patch_size,
+            exclude_ids=wsi_segmentation_input.tissue.exclude_ids,
+            keep_ids=wsi_segmentation_input.tissue.keep_ids,
         )
     except Exception as e:
         logger.error(f"Error during tissue segmentation: {e}")
@@ -162,7 +162,7 @@ def run_wsi_segmentation(
             holes=holes,
             seg_level=seg_level,
             slide_path=wsi_segmentation_input.slide_path,
-            min_area_px_level0=wsi_segmentation_input.min_area_px_level0,
+            min_area_px_level0=wsi_segmentation_input.tissue.min_area_px_level0,
         )
 
         logger.info(
@@ -176,12 +176,12 @@ def run_wsi_segmentation(
             tile_level=plan.chosen_level,
             tile_size=plan.level_tile_size,
             step_size=plan.level_stride,
-            contour_fn=wsi_segmentation_input.contour_fn,
-            center_shift=wsi_segmentation_input.center_shift,
-            use_padding=wsi_segmentation_input.use_padding,
-            top_left=wsi_segmentation_input.top_left,
-            bot_right=wsi_segmentation_input.bot_right,
-            max_workers=wsi_segmentation_input.max_workers,
+            contour_fn=wsi_segmentation_input.tiling.contour_fn,
+            center_shift=wsi_segmentation_input.tiling.center_shift,
+            use_padding=wsi_segmentation_input.tiling.use_padding,
+            top_left=wsi_segmentation_input.tiling.top_left,
+            bot_right=wsi_segmentation_input.tiling.bot_right,
+            max_workers=wsi_segmentation_input.tiling.max_workers,
         )
         logger.info(
             "Generated %d tile coordinates for slide %s",
@@ -199,9 +199,9 @@ def run_wsi_segmentation(
         tile_level=plan.chosen_level,
         level_tile_size=plan.level_tile_size,
         model_runner=model_runner,
-        output_target_mpp=wsi_segmentation_input.output_target_mpp,
-        batch_size=wsi_segmentation_input.batch_size,
-        num_workers=wsi_segmentation_input.num_workers,
+        output_target_mpp=wsi_segmentation_input.inference.output_target_mpp,
+        batch_size=wsi_segmentation_input.inference.batch_size,
+        num_workers=wsi_segmentation_input.inference.num_workers,
         resample=plan.needs_resampling,
         model_tile_size=plan.model_tile_size,
     )

@@ -290,3 +290,4 @@ previews/
 thumbnails/
 
 /resources/
+docker-compose.override.yaml
