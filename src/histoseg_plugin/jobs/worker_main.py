@@ -1,11 +1,27 @@
-from histoseg_plugin.jobs.db import init_db, get_engine
-from histoseg_plugin.jobs.queue_models import Base
+from histoseg_plugin.jobs.db import (
+    create_queue_engine,
+    create_session_factory,
+    init_queue_db,
+)
 from histoseg_plugin.jobs.worker import run_worker_forever
 from histoseg_plugin.settings import get_settings
 
 
-if __name__ == "__main__":
+def main() -> None:
     settings = get_settings()
-    init_db(settings)
-    Base.metadata.create_all(bind=get_engine())
-    run_worker_forever(settings)
+
+    engine = create_queue_engine(settings.queue_db_url)
+    init_queue_db(engine)
+    session_factory = create_session_factory(engine)
+
+    try:
+        run_worker_forever(
+            settings=settings,
+            session_factory=session_factory,
+        )
+    finally:
+        engine.dispose()
+
+
+if __name__ == "__main__":
+    main()

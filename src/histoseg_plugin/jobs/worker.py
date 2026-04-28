@@ -1,3 +1,6 @@
+# histoseg_plugin/jobs/worker.py
+from __future__ import annotations
+
 import gc
 import json
 import logging
@@ -6,48 +9,41 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-
-from matplotlib.pylab import Any
+from typing import Any
 
 import torch
-from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy import select
+from sqlalchemy.orm import sessionmaker, Session
 
 from histoseg_plugin.core.inference.bundle import InferenceBundle
 from histoseg_plugin.core.inference.loader import load_inference_bundle
-from histoseg_plugin.core.pipeline.contracts import (
-    InferenceParams,
-    TilingParams,
-    TissueSegmentationParams,
-    WSISegmentationInput,
-)
+from histoseg_plugin.core.pipeline.contracts import WSISegmentationInput
 from histoseg_plugin.core.pipeline.wsi_segmentation import run_wsi_segmentation
-from histoseg_plugin.io.slide import assert_allowed_root, slide_uri_to_path
-from histoseg_plugin.settings import Settings, get_settings
-from histoseg_plugin.storage.results import build_result_dir, write_geojson, write_stats
-
-from .db import get_session
-from .queue_models import Task, TaskStatus
-from .queue_ops import is_queue_paused, refresh_job_status
-from .recovery import reset_stale_running_tasks
-from .result_service import register_result
+from histoseg_plugin.jobs.queue_models import Task, TaskStatus
+from histoseg_plugin.jobs.queue_ops import (
+    is_queue_paused,
+    refresh_job_status,
+)
+from histoseg_plugin.jobs.recovery import reset_stale_running_tasks
+from histoseg_plugin.jobs.result_service import register_result
+from histoseg_plugin.settings import Settings
+from histoseg_plugin.storage.results import (
+    build_result_dir,
+    write_geojson,
+    write_stats,
+)
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 
 @dataclass
 class WorkerRuntime:
     worker_id: str
+    model_root: Path
+    device: torch.device
     loaded_model_id: str | None = None
     loaded_model_bundle: InferenceBundle | None = None
     last_activity_ts: float = 0.0
-    model_dir: Path = Path(settings.models_root)
-    device: torch.device = torch.device(
-        "cuda:0"
-        if torch.cuda.is_available() and settings.preferred_device == "cuda"
-        else "cpu"
-    )
 
     def touch(self) -> None:
         self.last_activity_ts = time.time()
@@ -56,6 +52,7 @@ class WorkerRuntime:
         self.loaded_model_bundle = None
         self.loaded_model_id = None
         gc.collect()
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
@@ -64,16 +61,36 @@ class WorkerRuntime:
             return self.loaded_model_bundle
 
         self.unload_model()
+
+        model_dir = self.model_root / model_id
+        logger.info("Loading model %s from %s", model_id, model_dir)
+
         self.loaded_model_bundle = load_inference_bundle(
-            self.model_dir / model_id, device=self.device
+            model_dir,
+            device=self.device,
         )
         self.loaded_model_id = model_id
         self.touch()
+
         return self.loaded_model_bundle
 
 
-def claim_next_task(runtime: WorkerRuntime) -> Task | None:
-    with get_session() as session:
+def build_worker_runtime(settings: Settings) -> WorkerRuntime:
+    use_cuda = torch.cuda.is_available() and settings.preferred_device == "cuda"
+    device = torch.device("cuda:0" if use_cuda else "cpu")
+
+    return WorkerRuntime(
+        worker_id=f"worker-{socket.gethostname()}",
+        model_root=settings.models_root,
+        device=device,
+    )
+
+
+def claim_next_task(
+    session_factory: sessionmaker[Session],
+    runtime: WorkerRuntime,
+) -> Task | None:
+    with session_factory.begin() as session:
         if is_queue_paused(session):
             return None
 
@@ -83,6 +100,7 @@ def claim_next_task(runtime: WorkerRuntime) -> Task | None:
             .order_by(Task.id.asc())
             .limit(1)
         )
+
         task = session.scalar(stmt)
         if task is None:
             return None
@@ -91,60 +109,102 @@ def claim_next_task(runtime: WorkerRuntime) -> Task | None:
         task.worker_id = runtime.worker_id
         task.started_at = datetime.utcnow()
         task.heartbeat_at = datetime.utcnow()
+        task.stage = "claimed"
+        task.progress = 0.0
+
         session.flush()
         session.expunge(task)
+
         return task
 
 
-def update_task_progress(task_id: int, stage: str, progress: float) -> None:
-    with get_session() as session:
+def update_task_progress(
+    session_factory: sessionmaker[Session],
+    task_id: int,
+    stage: str,
+    progress: float,
+) -> None:
+    with session_factory.begin() as session:
         task = session.get(Task, task_id)
         if task is None:
             return
+
         task.stage = stage
         task.progress = progress
         task.heartbeat_at = datetime.utcnow()
-        session.flush()
 
 
-def resolve_and_check_slide(slide_uri: str) -> Path:
-    slide_path = slide_uri_to_path(slide_uri)
-    try:
-        assert_allowed_root(slide_path, settings.allowed_roots)
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    return slide_path
+def mark_task_failed(
+    session_factory: sessionmaker[Session],
+    task_id: int,
+    error_message: str,
+) -> None:
+    with session_factory.begin() as session:
+        task = session.get(Task, task_id)
+        if task is None:
+            return
+
+        task.status = TaskStatus.FAILED
+        task.error_message = error_message
+        task.finished_at = datetime.utcnow()
+        task.heartbeat_at = datetime.utcnow()
+        task.stage = "failed"
+
+        refresh_job_status(session, task.job_id)
 
 
 def task_to_wsi_input(task: Task) -> WSISegmentationInput:
+    payload = json.loads(task.params_json)
+    return WSISegmentationInput.from_dict(payload)
 
-    return WSISegmentationInput.from_dict(task.params_json)
+
+def to_jsonable(obj: Any) -> Any:
+    if obj is None:
+        return None
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    return obj
 
 
-def process_task(runtime: WorkerRuntime, task: Task, results_dir: Path) -> None:
-    runtime.ensure_model_loaded(task.model_id)
+def process_task(
+    session_factory: sessionmaker[Session],
+    runtime: WorkerRuntime,
+    task: Task,
+    results_root: Path,
+) -> None:
+    update_task_progress(session_factory, task.id, "loading_model", 1.0)
 
-    params = json.loads(task.params_json)
-
-    update_task_progress(task.id, "starting", 1.0)
     inference_bundle = runtime.ensure_model_loaded(task.model_id)
+
+    update_task_progress(session_factory, task.id, "running_segmentation", 5.0)
+
+    wsi_input = task_to_wsi_input(task)
+
     result = run_wsi_segmentation(
-        wsi_segmentation_input=build_wsi_segmentation_input(params),
+        wsi_segmentation_input=wsi_input,
         inference_bundle=inference_bundle,
     )
 
-    dummy_geojson = {"type": "FeatureCollection", "features": []}
-    dummy_stats = {"slide_uri": task.slide_uri, "model_id": task.model_id}
+    update_task_progress(session_factory, task.id, "writing_results", 95.0)
 
-    result_dir = build_result_dir(results_dir, task.task_hash)
-    geojson_path = write_geojson(result_dir, dummy_geojson)
-    stats_path = write_stats(result_dir, dummy_stats)
+    result_dir = build_result_dir(results_root, task.task_hash)
 
-    with get_session() as session:
-        result = register_result(
+    output_payload = {
+        "coords_space": result.coords_space,
+        "tissue": to_jsonable(result.tissue),
+        "outputs": to_jsonable(result.outputs),
+    }
+
+    stats_payload = to_jsonable(result.statistics)
+
+    geojson_path = write_geojson(result_dir, output_payload)
+    stats_path = write_stats(result_dir, stats_payload)
+
+    with session_factory.begin() as session:
+        registered_result = register_result(
             session,
             task_hash=task.task_hash,
-            slide_uri=task.slide_uri,
+            slide_path=task.slide_path,
             model_id=task.model_id,
             result_dir=str(result_dir),
             geojson_path=str(geojson_path),
@@ -152,13 +212,16 @@ def process_task(runtime: WorkerRuntime, task: Task, results_dir: Path) -> None:
         )
 
         db_task = session.get(Task, task.id)
+        if db_task is None:
+            raise RuntimeError(f"Task disappeared while processing: {task.id}")
+
         db_task.status = TaskStatus.COMPLETED
         db_task.progress = 100.0
         db_task.stage = "done"
-        db_task.result_id = result.id
+        db_task.result_id = registered_result.id
         db_task.finished_at = datetime.utcnow()
         db_task.heartbeat_at = datetime.utcnow()
-        session.flush()
+
         refresh_job_status(session, db_task.job_id)
 
     runtime.touch()
@@ -167,42 +230,57 @@ def process_task(runtime: WorkerRuntime, task: Task, results_dir: Path) -> None:
 def maybe_unload_idle_model(runtime: WorkerRuntime, settings: Settings) -> None:
     if runtime.loaded_model_bundle is None:
         return
-    if time.time() - runtime.last_activity_ts > settings.gpu_idle_unload_seconds:
+
+    idle_seconds = time.time() - runtime.last_activity_ts
+    if idle_seconds > settings.gpu_idle_unload_seconds:
+        logger.info("Unloading model after %.1f idle seconds", idle_seconds)
         runtime.unload_model()
 
 
-def run_worker_forever(settings: Settings) -> None:
-    runtime = WorkerRuntime(worker_id=f"worker-{socket.gethostname()}")
-    logger.info("Worker started: %s", runtime.worker_id)
+def run_worker_forever(
+    settings: Settings,
+    session_factory: sessionmaker[Session],
+) -> None:
+    runtime = build_worker_runtime(settings)
+
+    logger.info("Worker started: %s on %s", runtime.worker_id, runtime.device)
+
     if settings.debug:
         import debugpy
 
         debugpy.listen(("0.0.0.0", 5678))
-        print("Waiting for debugger attach...")
+        logger.info("debugpy listening on 0.0.0.0:5678")
         debugpy.wait_for_client()
 
-    with get_session() as session:
+    with session_factory.begin() as session:
         reset_stale_running_tasks(session)
 
     while True:
-        task = claim_next_task(runtime)
+        task = claim_next_task(session_factory, runtime)
+
         if task is None:
             maybe_unload_idle_model(runtime, settings)
             time.sleep(settings.worker_poll_interval_seconds)
             continue
 
-        logger.info("Claimed task %s for slide %s", task.id, task.slide_uri)
+        logger.info(
+            "Claimed task %s for slide %s with model %s",
+            task.id,
+            task.slide_path,
+            task.model_id,
+        )
+
         try:
-            process_task(runtime, task, settings.results_root)
+            process_task(
+                session_factory=session_factory,
+                runtime=runtime,
+                task=task,
+                results_root=settings.results_root,
+            )
         except Exception as exc:
-            with get_session() as session:
-                db_task = session.get(Task, task.id)
-                if db_task is not None:
-                    db_task.status = TaskStatus.FAILED
-                    db_task.error_message = str(exc)
-                    db_task.finished_at = datetime.utcnow()
-                    db_task.heartbeat_at = datetime.utcnow()
-                    session.flush()
-                    refresh_job_status(session, db_task.job_id)
-            logger.exception("Error processing task %d: %s", task.id, exc)
-            continue
+            logger.exception("Error processing task %s: %s", task.id, exc)
+            mark_task_failed(
+                session_factory=session_factory,
+                task_id=task.id,
+                error_message=str(exc),
+            )

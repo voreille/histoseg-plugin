@@ -29,3 +29,13 @@ def assert_allowed_root(path: Path, allowed_roots: list[Path]) -> None:
         except ValueError:
             continue
     raise PermissionError(f"Slide path not under allowed roots: {rp}")
+
+
+def resolve_and_check_slide(slide_uri: str, allowed_roots: list[Path]) -> Path:
+    slide_path = slide_uri_to_path(slide_uri).resolve()
+    assert_allowed_root(slide_path, allowed_roots)
+    if not slide_path.exists():
+        raise FileNotFoundError(f"Slide file does not exist: {slide_path}")
+    if not slide_path.is_file():
+        raise ValueError(f"Slide path is not a file: {slide_path}")
+    return slide_path

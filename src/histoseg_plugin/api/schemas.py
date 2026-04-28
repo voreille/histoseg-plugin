@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Literal
+from typing import Dict, Literal, List
 
 from pydantic import BaseModel, Field
 
@@ -57,3 +57,15 @@ class WSISegmentationResponse(BaseModel):
     tissue: GeoJSONFeatureCollection
     outputs: Dict[str, GeoJSONFeatureCollection]
     statistics: DemoPatternStatistics | None = None
+
+
+class JobItem(BaseModel):
+    # define properly later
+    # for now minimal
+    slide_uri: str
+    model_id: str | None = "default"
+    params: dict = {}
+
+
+class CreateJobRequest(BaseModel):
+    items: List[JobItem]

@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 import openslide
-from fastapi import APIRouter, HTTPException, Request
+import torch
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from histoseg_plugin.api.schemas import (
     GeoJSONFeatureCollection,
@@ -15,34 +16,20 @@ from histoseg_plugin.api.schemas import (
     WSISegmentationResponse,
 )
 from histoseg_plugin.core.inference.bundle import InferenceBundle
+from histoseg_plugin.core.inference.loader import load_inference_bundle
+from histoseg_plugin.core.pipeline.wsi_segmentation import (
+    run_wsi_segmentation,
+    run_tissue_segmentation,
+)
 from histoseg_plugin.core.tissue.geojson import contours_to_geojson_features
-from histoseg_plugin.io.slide import assert_allowed_root, slide_uri_to_path
-from histoseg_plugin.core.tissue.segmentation import segment_tissue
-from histoseg_plugin.core.pipeline.wsi_segmentation import run_wsi_segmentation
-from histoseg_plugin.core.pipeline.contracts import (
-    WSISegmentationInput,
-    TissueSegmentationParams,
-    TilingParams,
-    InferenceParams,
+from histoseg_plugin.settings import Settings, get_settings
+from histoseg_plugin.api.adapters.segment import (
+    build_wsi_segmentation_input,
+    build_tissue_segmentation_input,
 )
 
 router = APIRouter(prefix="/segment", tags=["segmentation"])
 logger = logging.getLogger(__name__)
-
-ALLOWED_ROOTS = [
-    Path("/mnt/nas6"),
-    Path("/mnt/nas7"),
-    Path("/home/val/data"),
-]  # TODO: move to settings
-
-
-def resolve_and_check_slide(slide_uri: str) -> Path:
-    slide_path = slide_uri_to_path(slide_uri)
-    try:
-        assert_allowed_root(slide_path, ALLOWED_ROOTS)
-    except PermissionError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    return slide_path
 
 
 def normalize_seg_level(seg_level: int, level_count: int) -> int:
@@ -66,34 +53,6 @@ def open_wsi(path: Path):
         yield wsi
     finally:
         wsi.close()
-
-
-def run_tissue_segmentation(
-    wsi: openslide.OpenSlide,
-    req: TissueContoursRequest | WSISegmentationRequest,
-) -> tuple[list[Any], list[Any], int]:
-    seg_level = normalize_seg_level(req.tissue.seg_level, wsi.level_count)
-
-    try:
-        contours, holes = segment_tissue(
-            wsi,
-            seg_level=seg_level,
-            sthresh=req.tissue.sthresh,
-            sthresh_up=req.tissue.sthresh_up,
-            mthresh=req.tissue.mthresh,
-            close=req.tissue.close,
-            use_otsu=req.tissue.use_otsu,
-            filter_params=req.tissue.filter_params,
-            ref_patch_size=req.tissue.ref_patch_size,
-            exclude_ids=req.tissue.exclude_ids,
-            keep_ids=req.tissue.keep_ids,
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"segment_tissue failed: {e}")
-
-    return contours, holes, seg_level
 
 
 def build_tissue_geojson(
@@ -122,66 +81,58 @@ def build_tissue_geojson(
 
 
 @router.post("/tissue", response_model=GeoJSONFeatureCollection)
-def segment_tissue_route(req: TissueContoursRequest) -> GeoJSONFeatureCollection:
-    slide_path = resolve_and_check_slide(req.slide_uri)
+def segment_tissue_route(
+    req: Request, tissue_req: TissueContoursRequest
+) -> GeoJSONFeatureCollection:
+    wsi_segmentation_input = build_tissue_segmentation_input(
+        req=tissue_req,
+        allowed_roots=req.app.state.allowed_roots,
+    )
 
-    with open_wsi(slide_path) as wsi:
-        contours, holes, seg_level = run_tissue_segmentation(wsi=wsi, req=req)
+    with open_wsi(wsi_segmentation_input.slide_path) as wsi:
+        contours, holes, seg_level = run_tissue_segmentation(
+            wsi=wsi, wsi_segmentation_input=wsi_segmentation_input
+        )
 
     return build_tissue_geojson(
         contours=contours,
         holes=holes,
         seg_level=seg_level,
-        slide_uri=req.slide_uri,
-        min_area_px_level0=req.tissue.min_area_px_level0,
+        slide_uri=tissue_req.slide_uri,
+        min_area_px_level0=tissue_req.tissue.min_area_px_level0,
     )
 
 
-def build_wsi_segmentation_input(req: WSISegmentationRequest) -> WSISegmentationInput:
-    slide_path = resolve_and_check_slide(req.slide_uri)
+def get_debug_inference_bundle(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> InferenceBundle:
+    if not hasattr(request.app.state, "debug_inference_bundle"):
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        model_dir = settings.default_model_dir.resolve()
 
-    return WSISegmentationInput(
-        slide_path=slide_path,
-        tissue=TissueSegmentationParams(
-            seg_level=req.tissue.seg_level,
-            sthresh=req.tissue.sthresh,
-            sthresh_up=req.tissue.sthresh_up,
-            mthresh=req.tissue.mthresh,
-            close=req.tissue.close,
-            use_otsu=req.tissue.use_otsu,
-            filter_params=dict(req.tissue.filter_params),
-            ref_patch_size=req.tissue.ref_patch_size,
-            exclude_ids=list(req.tissue.exclude_ids),
-            keep_ids=list(req.tissue.keep_ids),
-            min_area_px_level0=req.tissue.min_area_px_level0,
-        ),
-        tiling=TilingParams(
-            contour_fn=req.tiling.contour_fn,
-            center_shift=req.tiling.center_shift,
-            use_padding=req.tiling.use_padding,
-            top_left=tuple(req.tiling.top_left) if req.tiling.top_left else None,
-            bot_right=tuple(req.tiling.bot_right) if req.tiling.bot_right else None,
-            max_workers=req.tiling.max_workers,
-        ),
-        inference=InferenceParams(
-            output_target_mpp=req.inference.output_target_mpp,
-            batch_size=req.inference.batch_size,
-            num_workers=req.inference.num_workers,
-        ),
-    )
+        request.app.state.debug_inference_bundle = load_inference_bundle(
+            model_dir,
+            device=device,
+        )
+        request.app.state.debug_device = device
+
+    return request.app.state.debug_inference_bundle
 
 
 @router.post("/wsi", response_model=WSISegmentationResponse)
 def segment_wsi_route(
-    req: WSISegmentationRequest,
+    wsi_req: WSISegmentationRequest,
     request: Request,
+    inference_bundle: InferenceBundle = Depends(get_debug_inference_bundle),
 ) -> WSISegmentationResponse:
 
-    bundle: InferenceBundle = request.app.state.inference_bundle
     try:
         result = run_wsi_segmentation(
-            wsi_segmentation_input=build_wsi_segmentation_input(req),
-            inference_bundle=bundle,
+            wsi_segmentation_input=build_wsi_segmentation_input(
+                wsi_req, request.app.state.allowed_roots
+            ),
+            inference_bundle=inference_bundle,
         )
     except Exception as e:
         logger.error(f"Error during WSI segmentation: {e}")

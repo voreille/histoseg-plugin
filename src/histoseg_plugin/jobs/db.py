@@ -1,51 +1,21 @@
-# jobs/db.py
-from __future__ import annotations
-
-from contextlib import contextmanager
-
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import sessionmaker, Session
 
-_engine = None
-_SessionLocal = None
+from histoseg_plugin.jobs.queue_models import Base
 
 
-def init_db(settings) -> None:
-    global _engine, _SessionLocal
-
+def create_queue_engine(db_url: str) -> Engine:
     connect_args = {}
-    if settings.queue_db_url.startswith("sqlite"):
+    if db_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
 
-    _engine = create_engine(
-        settings.queue_db_url,
-        connect_args=connect_args,
-        future=True,
-    )
-    _SessionLocal = sessionmaker(
-        bind=_engine,
-        autoflush=False,
-        autocommit=False,
-        future=True,
-    )
+    return create_engine(db_url, connect_args=connect_args)
 
 
-def get_engine():
-    if _engine is None:
-        raise RuntimeError("Database not initialized. Call init_db(settings) first.")
-    return _engine
+def create_session_factory(engine: Engine) -> sessionmaker[Session]:
+    return sessionmaker(bind=engine, expire_on_commit=False)
 
 
-@contextmanager
-def get_session():
-    if _SessionLocal is None:
-        raise RuntimeError("Database not initialized. Call init_db(settings) first.")
-    session = _SessionLocal()
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+def init_queue_db(engine: Engine) -> None:
+    Base.metadata.create_all(bind=engine)

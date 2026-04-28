@@ -1,25 +1,23 @@
-from fastapi import APIRouter
-from histoseg_plugin.jobs.db import get_session
-from histoseg_plugin.jobs.queue_ops import pause_queue, resume_queue, is_queue_paused
+from fastapi import APIRouter, Depends
+
+from histoseg_plugin.jobs.queue_service import QueueService
+from histoseg_plugin.api.dependencies.queue import get_queue_service
 
 router = APIRouter(prefix="/queue", tags=["queue"])
 
 
 @router.get("")
-def get_queue_state():
-    with get_session() as session:
-        return {"paused": is_queue_paused(session)}
+def get_queue_state(queue_service: QueueService = Depends(get_queue_service)):
+    return {"paused": queue_service.is_queue_paused()}
 
 
 @router.post("/pause")
-def pause():
-    with get_session() as session:
-        pause_queue(session)
-        return {"paused": True}
+def pause(queue_service: QueueService = Depends(get_queue_service)):
+    queue_service.pause_queue()
+    return {"paused": True}
 
 
 @router.post("/resume")
-def resume():
-    with get_session() as session:
-        resume_queue(session)
-        return {"paused": False}
+def resume(queue_service: QueueService = Depends(get_queue_service)):
+    queue_service.resume_queue()
+    return {"paused": False}
