@@ -6,6 +6,8 @@ from .hashing import build_task_payload, sha256_dict
 from .queue_models import Job, JobStatus, QueueState, Task, TaskStatus
 from .result_service import find_result_by_hash
 
+from histoseg_plugin.core.pipeline.contracts import WSISegmentationInput
+
 
 def ensure_queue_state(session: Session) -> QueueState:
     state = session.get(QueueState, 1)
@@ -30,37 +32,32 @@ def is_queue_paused(session: Session) -> bool:
     return ensure_queue_state(session).paused
 
 
-def submit_batch(session: Session, items: list[dict]) -> Job:
-    batch_hash = sha256_dict(items)
+def submit_batch(session: Session, items: list[WSISegmentationInput]) -> Job:
+    batch_payload = [item.as_dict() for item in items]
+    batch_hash = sha256_dict(batch_payload)
+
     job = Job(request_hash=batch_hash, status=JobStatus.PENDING)
     session.add(job)
     session.flush()
 
     for item in items:
-        task_hash = sha256_dict(item)
+        payload = item.as_dict()
+        task_hash = sha256_dict(payload)
 
         existing_result = find_result_by_hash(session, task_hash)
-        if existing_result is not None:
-            task = Task(
-                job_id=job.id,
-                status=TaskStatus.CACHED,
-                slide_path=item["slide_path"],
-                model_id=item["model_id"],
-                task_hash=task_hash,
-                params_json=json.dumps(item.get("params", {})),
-                stage="cached",
-                progress=100.0,
-                result_id=existing_result.id,
-            )
-        else:
-            task = Task(
-                job_id=job.id,
-                status=TaskStatus.PENDING,
-                slide_path=item["slide_path"],
-                model_id=item["model_id"],
-                task_hash=task_hash,
-                params_json=json.dumps(item.get("params", {})),
-            )
+
+        task = Task(
+            job_id=job.id,
+            status=TaskStatus.CACHED if existing_result else TaskStatus.PENDING,
+            slide_path=str(item.slide_path),
+            model_id=item.model_id,
+            task_hash=task_hash,
+            params_json=json.dumps(payload, sort_keys=True),
+            stage="cached" if existing_result else None,
+            progress=100.0 if existing_result else 0.0,
+            result_id=existing_result.id if existing_result else None,
+        )
+
         session.add(task)
 
     session.flush()

@@ -1,5 +1,6 @@
 from sqlalchemy.orm import sessionmaker
 
+from histoseg_plugin.core.pipeline.contracts import WSISegmentationInput
 from .queue_models import Job
 from .queue_ops import (
     get_job,
@@ -15,7 +16,7 @@ class QueueService:
     def __init__(self, session_factory: sessionmaker):
         self.session_factory = session_factory
 
-    def submit_batch(self, items: list[dict]) -> Job:
+    def submit_batch(self, items: list[WSISegmentationInput]) -> Job:
         with self.session_factory() as session:
             job = submit_batch(session, items)
             session.commit()

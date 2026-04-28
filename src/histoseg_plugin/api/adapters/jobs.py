@@ -13,7 +13,7 @@ from histoseg_plugin.core.pipeline.contracts import (
 def build_job_item_input(
     item: JobItem,
     allowed_roots: list[Path],
-) -> dict:
+) -> WSISegmentationInput:
     slide_path = resolve_allowed_path(item.slide_uri, allowed_roots)
 
     return WSISegmentationInput(
@@ -45,11 +45,11 @@ def build_job_item_input(
             batch_size=item.inference.batch_size,
             num_workers=item.inference.num_workers,
         ),
-    ).as_dict()
+    )
 
 
 def build_job_inputs(
     items: list[JobItem],
     allowed_roots: list[Path],
-) -> list[dict]:
+) -> list[WSISegmentationInput]:
     return [build_job_item_input(item, allowed_roots) for item in items]

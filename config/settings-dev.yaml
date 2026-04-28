@@ -20,7 +20,7 @@ default_model_dir: models/giddy-spaceship-137
 preferred_device: cuda
 use_amp: true
 
-api:
-  host: 0.0.0.0
-  port: 8000
-  reload: true
+# api:
+#   host: 0.0.0.0
+#   port: 8000
+#   reload: true

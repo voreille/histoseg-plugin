@@ -11,7 +11,7 @@ def register_result(
     session: Session,
     *,
     task_hash: str,
-    slide_uri: str,
+    slide_path: str,
     model_id: str,
     result_dir: str,
     geojson_path: str | None,
@@ -23,7 +23,7 @@ def register_result(
 
     result = Result(
         task_hash=task_hash,
-        slide_uri=slide_uri,
+        slide_uri=slide_path,
         model_id=model_id,
         result_dir=result_dir,
         geojson_path=geojson_path,

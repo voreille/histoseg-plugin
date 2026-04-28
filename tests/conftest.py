@@ -2,8 +2,11 @@
 import pytest
 import yaml
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from histoseg_plugin.api.main import create_app
+from histoseg_plugin.jobs.queue_models import Base
 from histoseg_plugin.settings import Settings, get_settings
 
 
@@ -73,3 +76,21 @@ def test_slide(tmp_path):
     slide_path = tmp_path / "slide.svs"
     slide_path.write_bytes(b"fake slide")
     return slide_path
+
+
+@pytest.fixture
+def engine(test_settings):
+    engine = create_engine(
+        test_settings.queue_db_url,
+        connect_args={"check_same_thread": False},  # sqlite
+    )
+    Base.metadata.create_all(bind=engine)
+
+    yield engine
+
+    engine.dispose()
+
+
+@pytest.fixture
+def session_factory(engine):
+    return sessionmaker(bind=engine, expire_on_commit=False)
