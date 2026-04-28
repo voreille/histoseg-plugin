@@ -13,12 +13,13 @@ from typing import Any
 
 import torch
 from sqlalchemy import select
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from histoseg_plugin.core.inference.bundle import InferenceBundle
 from histoseg_plugin.core.inference.loader import load_inference_bundle
 from histoseg_plugin.core.pipeline.contracts import WSISegmentationInput
 from histoseg_plugin.core.pipeline.wsi_segmentation import run_wsi_segmentation
+from histoseg_plugin.core.serialization import to_jsonable
 from histoseg_plugin.jobs.queue_models import Task, TaskStatus
 from histoseg_plugin.jobs.queue_ops import (
     is_queue_paused,
@@ -41,6 +42,7 @@ class WorkerRuntime:
     worker_id: str
     model_root: Path
     device: torch.device
+    default_model_id: str = "default"
     loaded_model_id: str | None = None
     loaded_model_bundle: InferenceBundle | None = None
     last_activity_ts: float = 0.0
@@ -62,7 +64,11 @@ class WorkerRuntime:
 
         self.unload_model()
 
-        model_dir = self.model_root / model_id
+        if model_id == "default":
+            model_dir = self.model_root / self.default_model_id
+        else:
+            model_dir = self.model_root / model_id
+
         logger.info("Loading model %s from %s", model_id, model_dir)
 
         self.loaded_model_bundle = load_inference_bundle(
@@ -83,6 +89,7 @@ def build_worker_runtime(settings: Settings) -> WorkerRuntime:
         worker_id=f"worker-{socket.gethostname()}",
         model_root=settings.models_root,
         device=device,
+        default_model_id=settings.default_model_id,
     )
 
 
@@ -158,14 +165,6 @@ def task_to_wsi_input(task: Task) -> WSISegmentationInput:
     return WSISegmentationInput.from_dict(payload)
 
 
-def to_jsonable(obj: Any) -> Any:
-    if obj is None:
-        return None
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump(mode="json")
-    return obj
-
-
 def process_task(
     session_factory: sessionmaker[Session],
     runtime: WorkerRuntime,
@@ -191,14 +190,12 @@ def process_task(
 
     output_payload = {
         "coords_space": result.coords_space,
-        "tissue": to_jsonable(result.tissue),
-        "outputs": to_jsonable(result.outputs),
+        "tissue": result.tissue,
+        "outputs": result.outputs,
     }
 
-    stats_payload = to_jsonable(result.statistics)
-
-    geojson_path = write_geojson(result_dir, output_payload)
-    stats_path = write_stats(result_dir, stats_payload)
+    geojson_path = write_geojson(result_dir, to_jsonable(output_payload))
+    stats_path = write_stats(result_dir, to_jsonable(result.statistics))
 
     with session_factory.begin() as session:
         registered_result = register_result(

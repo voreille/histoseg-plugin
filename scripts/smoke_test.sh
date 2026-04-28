@@ -3,7 +3,7 @@
 set -euo pipefail
 
 API_URL="${API_URL:-http://localhost:8090}"
-SLIDE_URI="${1:?Usage: scripts/smoke_job.sh file:///home/val/data/CPTAC-curation/acinar/C3L-00604-21.svs}"
+SLIDE_URI="${1:?Usage: scripts/smoke_job.sh file:///path/to/slide.svs}"
 MODEL_ID="${MODEL_ID:-default}"
 
 echo "Submitting job..."

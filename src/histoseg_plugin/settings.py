@@ -29,8 +29,6 @@ class Settings(BaseSettings):
     default_model_id: str = "default"
     preferred_device: str = "cuda"
 
-    default_model_dir: Path = Path("./models/default")
-
     model_config = SettingsConfigDict(
         env_prefix="HISTOSEG_",
         extra="ignore",

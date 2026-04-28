@@ -4,6 +4,7 @@ allowed_roots:
   - /mnt/nas6
   - /mnt/nas7
   - /home/val/data
+
 debug: true
 
 results_root: /app/results
@@ -15,8 +16,7 @@ worker_heartbeat_seconds: 5.0
 gpu_idle_unload_seconds: 300
 stale_task_timeout_seconds: 60
 
-default_model_id: default
-default_model_dir: models/giddy-spaceship-137
+default_model_id: giddy-spaceship-137
 preferred_device: cuda
 use_amp: true
 
