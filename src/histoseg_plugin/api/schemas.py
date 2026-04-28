@@ -60,12 +60,12 @@ class WSISegmentationResponse(BaseModel):
 
 
 class JobItem(BaseModel):
-    # define properly later
-    # for now minimal
     slide_uri: str
-    model_id: str | None = "default"
-    params: dict = {}
+    model_id: str = "default"
+    tissue: TissueSegmentationConfig = Field(default_factory=TissueSegmentationConfig)
+    tiling: TilingConfig = Field(default_factory=TilingConfig)
+    inference: InferenceConfig = Field(default_factory=InferenceConfig)
 
 
 class CreateJobRequest(BaseModel):
-    items: List[JobItem]
+    items: list[JobItem]

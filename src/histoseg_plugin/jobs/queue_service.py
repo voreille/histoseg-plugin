@@ -1,6 +1,6 @@
 from sqlalchemy.orm import sessionmaker
 
-from .queue_models import Job 
+from .queue_models import Job
 from .queue_ops import (
     get_job,
     is_queue_paused,
@@ -21,9 +21,29 @@ class QueueService:
             session.commit()
             return job
 
-    def get_job(self, job_id: int) -> Job | None:
+    def get_job(self, job_id: int) -> dict | None:
         with self.session_factory() as session:
-            return get_job(session, job_id)
+            job = get_job(session, job_id)
+            if job is None:
+                return None
+
+            return {
+                "job_id": job.id,
+                "status": job.status.value,
+                "tasks": [
+                    {
+                        "task_id": t.id,
+                        "status": t.status.value,
+                        "slide_path": str(t.slide_path),
+                        "model_id": t.model_id,
+                        "progress": t.progress,
+                        "stage": t.stage,
+                        "error_message": t.error_message,
+                        "result_id": t.result_id,
+                    }
+                    for t in job.tasks
+                ],
+            }
 
     def pause_queue(self) -> None:
         with self.session_factory() as session:
