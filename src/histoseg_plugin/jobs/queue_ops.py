@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from .hashing import build_task_payload, sha256_dict
 from .queue_models import Job, JobStatus, QueueState, Task, TaskStatus
-from .result_service import find_result_by_hash
+from .result_ops import find_result_by_hash
 
 from histoseg_plugin.core.pipeline.contracts import WSISegmentationInput
 
@@ -86,3 +86,7 @@ def refresh_job_status(session: Session, job_id: int) -> None:
 
 def get_job(session: Session, job_id: int) -> Job | None:
     return session.get(Job, job_id)
+
+
+def get_task_by_hash(session: Session, task_hash: str) -> Task | None:
+    return session.query(Task).filter(Task.task_hash == task_hash).first()

@@ -19,8 +19,8 @@ public class HistoSegExtension implements QuPathExtension {
         ));
 
         menu.getItems().add(createMenuItem(
-                "Submit selected project slides...",
-                commands::submitSelectedProjectSlides
+                "Submit all project slides...",
+                commands::submitAllProjectSlides
         ));
 
         menu.getItems().add(createMenuItem(

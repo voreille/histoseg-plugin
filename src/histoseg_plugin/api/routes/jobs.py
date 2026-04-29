@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 
 from histoseg_plugin.api.adapters.jobs import build_job_inputs
-from histoseg_plugin.api.dependencies.queue import get_queue_service
+from histoseg_plugin.api.dependencies.services import get_queue_service
 from histoseg_plugin.api.schemas import CreateJobRequest
 from histoseg_plugin.jobs.queue_service import QueueService
 from histoseg_plugin.settings import Settings, get_settings

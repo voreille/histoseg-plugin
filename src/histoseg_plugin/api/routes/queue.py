@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from histoseg_plugin.jobs.queue_service import QueueService
-from histoseg_plugin.api.dependencies.queue import get_queue_service
+from histoseg_plugin.api.dependencies.services import get_queue_service
 
 router = APIRouter(prefix="/queue", tags=["queue"])
 

@@ -9,6 +9,7 @@ from .queue_ops import (
     refresh_job_status,
     resume_queue,
     submit_batch,
+    get_task_by_hash,
 )
 
 
@@ -64,3 +65,20 @@ class QueueService:
         with self.session_factory() as session:
             refresh_job_status(session, job_id)
             session.commit()
+
+    def get_task_by_hash(self, task_hash: str) -> dict | None:
+        with self.session_factory() as session:
+            task = get_task_by_hash(session, task_hash)
+            if task is None:
+                return None
+
+            return {
+                "task_id": task.id,
+                "status": task.status.value,
+                "slide_path": str(task.slide_path),
+                "model_id": task.model_id,
+                "progress": task.progress,
+                "stage": task.stage,
+                "error_message": task.error_message,
+                "result_id": task.result_id,
+            }

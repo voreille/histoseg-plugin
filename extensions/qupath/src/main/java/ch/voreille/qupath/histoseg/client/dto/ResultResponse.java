@@ -2,34 +2,47 @@ package ch.voreille.qupath.histoseg.client.dto;
 
 import com.google.gson.JsonObject;
 
-/**
- * Response from a future GET /results/{result_id}.
- *
- * Keep GeoJSON/statistics as JsonObject because they are nested dynamic JSON
- * and are parsed elsewhere into QuPath annotations.
- */
 public class ResultResponse {
 
-    public long result_id;
-    public String status;
-
-    public JsonObject geojson;
+    public String coords_space;
+    public JsonObject tissue;
+    public JsonObject outputs;
     public JsonObject statistics;
-
-    /**
-     * Optional fields if the backend returns paths/metadata.
-     */
-    public String geojson_path;
-    public String statistics_path;
 
     public ResultResponse() {
     }
 
-    public boolean hasGeoJson() {
-        return geojson != null;
+    public boolean hasTissue() {
+        return tissue != null;
+    }
+
+    public boolean hasOutputs() {
+        return outputs != null;
     }
 
     public boolean hasStatistics() {
         return statistics != null;
+    }
+
+    public JsonObject toJsonObject() {
+        JsonObject obj = new JsonObject();
+
+        if (coords_space != null) {
+            obj.addProperty("coords_space", coords_space);
+        }
+
+        if (tissue != null) {
+            obj.add("tissue", tissue);
+        }
+
+        if (outputs != null) {
+            obj.add("outputs", outputs);
+        }
+
+        if (statistics != null) {
+            obj.add("statistics", statistics);
+        }
+
+        return obj;
     }
 }

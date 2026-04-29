@@ -1,34 +1,36 @@
-from sqlalchemy import select
-from sqlalchemy.orm import Session
-from .result_models import Result
+from sqlalchemy.orm import sessionmaker
+
+from histoseg_plugin.jobs.result_ops import get_result, find_result_by_hash
+from histoseg_plugin.jobs.result_store import load_result_payload
 
 
-def find_result_by_hash(session: Session, task_hash: str) -> Result | None:
-    return session.scalar(select(Result).where(Result.task_hash == task_hash))
+class ResultService:
+    def __init__(self, session_factory: sessionmaker):
+        self.session_factory = session_factory
 
+    def get_result_payload(self, result_id: int) -> dict | None:
+        with self.session_factory() as session:
+            result = get_result(session, result_id)
+            if result is None:
+                return None
 
-def register_result(
-    session: Session,
-    *,
-    task_hash: str,
-    slide_path: str,
-    model_id: str,
-    result_dir: str,
-    geojson_path: str | None,
-    stats_path: str | None,
-) -> Result:
-    existing = find_result_by_hash(session, task_hash)
-    if existing is not None:
-        return existing
+            return load_result_payload(
+                geojson_path=result.geojson_path,
+                stats_path=result.stats_path,
+            )
 
-    result = Result(
-        task_hash=task_hash,
-        slide_uri=slide_path,
-        model_id=model_id,
-        result_dir=result_dir,
-        geojson_path=geojson_path,
-        stats_path=stats_path,
-    )
-    session.add(result)
-    session.flush()
-    return result
+    def find_by_hash(self, task_hash: str) -> dict | None:
+        with self.session_factory() as session:
+            result = find_result_by_hash(session, task_hash)
+            if result is None:
+                return None
+
+            return {
+                "result_id": result.id,
+                "task_hash": result.task_hash,
+                "slide_uri": result.slide_uri,
+                "model_id": result.model_id,
+                "result_dir": result.result_dir,
+                "geojson_path": result.geojson_path,
+                "stats_path": result.stats_path,
+            }
