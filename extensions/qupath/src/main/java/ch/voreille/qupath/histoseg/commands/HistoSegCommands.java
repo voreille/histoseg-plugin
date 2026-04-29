@@ -5,8 +5,9 @@ import ch.voreille.qupath.histoseg.client.dto.*;
 import ch.voreille.qupath.histoseg.qupath.QuPathSlideUtils;
 import ch.voreille.qupath.histoseg.qupath.AnnotationImporter;
 import ch.voreille.qupath.histoseg.geojson.GeoJsonParser;
-import ch.voreille.qupath.histoseg.ui.ServerUrlDialog;
 import ch.voreille.qupath.histoseg.ui.QueueStatusDialog;
+import ch.voreille.qupath.histoseg.ui.HistoSegSettingsDialog;
+import ch.voreille.qupath.histoseg.settings.HistoSegPreferences;
 
 import javafx.application.Platform;
 import qupath.lib.gui.QuPathGUI;
@@ -28,14 +29,14 @@ public class HistoSegCommands {
             return;
 
         String slideUri = QuPathSlideUtils.getSlideUri(imageData);
-        String server = ServerUrlDialog.ask();
+        String server = HistoSegPreferences.getServerUrl();
         if (server == null)
             return;
 
         HistoSegClient client = new HistoSegClient(server);
 
         try {
-            JobItem item = new JobItem(slideUri, "default", null, null, null);
+            JobItem item = new JobItem(slideUri, HistoSegPreferences.getModelId(), null, null, null);
             CreateJobRequest req = new CreateJobRequest(List.of(item));
             CreateJobResponse resp = client.submitJob(req);
             System.out.println("Submitted job: " + resp.job_id);
@@ -46,7 +47,7 @@ public class HistoSegCommands {
 
     public void submitAllProjectSlides() {
         var uris = QuPathSlideUtils.getProjectSlideUris(qupath);
-        String server = ServerUrlDialog.ask();
+        String server = HistoSegPreferences.getServerUrl();
         if (server == null)
             return;
 
@@ -54,7 +55,7 @@ public class HistoSegCommands {
 
         try {
             var items = uris.stream()
-                    .map(uri -> new JobItem(uri.toString(), "default", null, null, null))
+                    .map(uri -> new JobItem(uri.toString(), HistoSegPreferences.getModelId(), null, null, null))
                     .toList();
 
             CreateJobRequest req = new CreateJobRequest(items);
@@ -70,7 +71,7 @@ public class HistoSegCommands {
             return;
 
         String slideUri = QuPathSlideUtils.getSlideUri(imageData);
-        String server = ServerUrlDialog.ask();
+        String server = HistoSegPreferences.getServerUrl();
         if (server == null)
             return;
 
@@ -78,7 +79,7 @@ public class HistoSegCommands {
 
         new Thread(() -> {
             try {
-                ResultLookupRequest req = new ResultLookupRequest(slideUri, "default");
+                ResultLookupRequest req = new ResultLookupRequest(slideUri, HistoSegPreferences.getModelId());
                 ResultLookupResponse lookup = client.lookupResult(req);
 
                 if (!lookup.found)
@@ -97,7 +98,7 @@ public class HistoSegCommands {
     }
 
     public void showQueueStatus() {
-        String server = ServerUrlDialog.ask();
+        String server = HistoSegPreferences.getServerUrl();
         if (server == null)
             return;
 
@@ -115,5 +116,9 @@ public class HistoSegCommands {
     }
 
     public void runSynchronousWSISegmentation() {
+    }
+
+    public void showSettings() {
+        HistoSegSettingsDialog.show();
     }
 }
