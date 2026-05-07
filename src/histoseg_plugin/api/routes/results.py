@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from histoseg_plugin.api.adapters.segment import build_wsi_segmentation_input
+from histoseg_plugin.api.adapters.jobs import build_job_item_input
 from histoseg_plugin.api.dependencies.services import (
     get_queue_service,
     get_result_service,
 )
-from histoseg_plugin.api.schemas import WSISegmentationRequest
+from histoseg_plugin.api.schemas import JobItem
 from histoseg_plugin.jobs.hashing import sha256_dict
 from histoseg_plugin.jobs.queue_service import QueueService
 from histoseg_plugin.jobs.result_service import ResultService
@@ -16,11 +16,11 @@ router = APIRouter(prefix="/results", tags=["results"])
 
 @router.post("/lookup")
 def lookup_result(
-    wsi_req: WSISegmentationRequest,
+    job_item: JobItem,
     settings: Settings = Depends(get_settings),
     queue_service: QueueService = Depends(get_queue_service),
 ):
-    seg_input = build_wsi_segmentation_input(wsi_req, settings.allowed_roots)
+    seg_input = build_job_item_input(job_item, settings.allowed_roots)
     task_hash = sha256_dict(seg_input.as_dict())
 
     task = queue_service.get_task_by_hash(task_hash)

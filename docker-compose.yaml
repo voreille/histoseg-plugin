@@ -21,7 +21,7 @@ services:
   api:
     <<: *histoseg-common
     build:
-      context: /home/val/workspaces
+      context: ${HOST_WORKSPACE_DIR}
       dockerfile: histoseg-plugin/Dockerfile
     container_name: histoseg-api
     command: >
