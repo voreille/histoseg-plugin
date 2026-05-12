@@ -2,12 +2,23 @@
 import pytest
 import yaml
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from histoseg_plugin.api.main import create_app
-from histoseg_plugin.jobs.queue_models import Base
+from histoseg_plugin.db.migrations.runner import run_migrations
 from histoseg_plugin.settings import Settings, get_settings
+from histoseg_plugin.db.engine import create_db_engine, init_db
+
+
+@pytest.fixture
+def migrated_test_db(test_settings):
+    engine = create_db_engine(test_settings.queue_db_url)
+    init_db(engine)
+    run_migrations(engine)
+
+    yield engine
+
+    engine.dispose()
 
 
 @pytest.fixture(autouse=True)
@@ -54,12 +65,10 @@ def test_config_file(tmp_path, test_settings):
 
 
 @pytest.fixture
-def app(monkeypatch, test_config_file, test_settings):
+def app(monkeypatch, test_config_file, test_settings, migrated_test_db):
     monkeypatch.setenv("HISTOSEG_CONFIG", str(test_config_file))
 
     app = create_app()
-
-    # Still useful for routes/dependencies using Depends(get_settings)
     app.dependency_overrides[get_settings] = lambda: test_settings
 
     return app
@@ -79,16 +88,8 @@ def test_slide(tmp_path):
 
 
 @pytest.fixture
-def engine(test_settings):
-    engine = create_engine(
-        test_settings.queue_db_url,
-        connect_args={"check_same_thread": False},  # sqlite
-    )
-    Base.metadata.create_all(bind=engine)
-
-    yield engine
-
-    engine.dispose()
+def engine(migrated_test_db):
+    return migrated_test_db
 
 
 @pytest.fixture

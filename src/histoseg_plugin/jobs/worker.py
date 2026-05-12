@@ -20,7 +20,7 @@ from histoseg_plugin.core.inference.loader import load_inference_bundle
 from histoseg_plugin.core.pipeline.contracts import WSISegmentationInput
 from histoseg_plugin.core.pipeline.wsi_segmentation import run_wsi_segmentation
 from histoseg_plugin.core.serialization import to_jsonable
-from histoseg_plugin.jobs.queue_models import Task, TaskStatus
+from histoseg_plugin.db.models import Task, TaskStatus
 from histoseg_plugin.jobs.queue_ops import (
     is_queue_paused,
     refresh_job_status,
@@ -104,7 +104,7 @@ def claim_next_task(
         stmt = (
             select(Task)
             .where(Task.status == TaskStatus.PENDING)
-            .order_by(Task.id.asc())
+            .order_by(Task.priority.desc(), Task.created_at.asc())
             .limit(1)
         )
 

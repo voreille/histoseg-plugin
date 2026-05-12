@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from .queue_models import Task, TaskStatus
+from ..db.models import Task, TaskStatus
 
 
 def reset_stale_running_tasks(session: Session, stale_seconds: int = 60) -> int:

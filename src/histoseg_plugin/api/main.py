@@ -7,13 +7,14 @@ from fastapi import FastAPI
 from histoseg_plugin.api.logging import setup_logging
 from histoseg_plugin.api.routes.jobs import router as jobs_router
 from histoseg_plugin.api.routes.queue import router as queue_router
-from histoseg_plugin.api.routes.segment import router as segmentation_router
 from histoseg_plugin.api.routes.results import router as results_router
-from histoseg_plugin.jobs.db import (
-    create_queue_engine,
+from histoseg_plugin.api.routes.segment import router as segmentation_router
+from histoseg_plugin.db.engine import (
+    create_db_engine,
     create_session_factory,
-    init_queue_db,
+    init_db,
 )
+from histoseg_plugin.db.migrations.runner import check_db_is_current
 from histoseg_plugin.jobs.queue_service import QueueService
 from histoseg_plugin.jobs.result_service import ResultService
 from histoseg_plugin.settings import get_settings
@@ -32,8 +33,9 @@ ALLOWED_ROOTS = [
 async def lifespan(app: FastAPI):
     settings = get_settings()
 
-    engine = create_queue_engine(settings.queue_db_url)
-    init_queue_db(engine)
+    engine = create_db_engine(settings.queue_db_url)
+    check_db_is_current(engine)
+    init_db(engine)
 
     session_factory = create_session_factory(engine)
 

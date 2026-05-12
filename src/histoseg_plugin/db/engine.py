@@ -2,10 +2,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker, Session
 
-from histoseg_plugin.jobs.queue_models import Base
+from histoseg_plugin.db.models import Base
 
 
-def create_queue_engine(db_url: str) -> Engine:
+def create_db_engine(db_url: str) -> Engine:
     connect_args = {}
     if db_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
@@ -17,5 +17,5 @@ def create_session_factory(engine: Engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
-def init_queue_db(engine: Engine) -> None:
+def init_db(engine: Engine) -> None:
     Base.metadata.create_all(bind=engine)

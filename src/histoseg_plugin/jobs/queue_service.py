@@ -1,7 +1,7 @@
 from sqlalchemy.orm import sessionmaker
 
 from histoseg_plugin.core.pipeline.contracts import WSISegmentationInput
-from .queue_models import Job
+from ..db.models import Job
 from .queue_ops import (
     get_job,
     is_queue_paused,

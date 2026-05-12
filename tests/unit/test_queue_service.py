@@ -1,4 +1,4 @@
-from histoseg_plugin.jobs.queue_models import JobStatus, TaskStatus
+from histoseg_plugin.db.models import JobStatus, TaskStatus
 from histoseg_plugin.jobs.queue_service import QueueService
 from histoseg_plugin.core.pipeline.contracts import WSISegmentationInput
 

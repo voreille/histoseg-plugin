@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .hashing import build_task_payload, sha256_dict
-from .queue_models import Job, JobStatus, QueueState, Task, TaskStatus
+from ..db.models import Job, JobStatus, QueueState, Task, TaskStatus
 from .result_ops import find_result_by_hash
 
 from histoseg_plugin.core.pipeline.contracts import WSISegmentationInput

@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from histoseg_plugin.jobs.result_models import Result
+from histoseg_plugin.db.models import Result
 
 
 def find_result_by_hash(session: Session, task_hash: str) -> Result | None:
@@ -28,7 +28,7 @@ def register_result(
 
     result = Result(
         task_hash=task_hash,
-        slide_uri=slide_path,
+        slide_path=slide_path,
         model_id=model_id,
         result_dir=result_dir,
         geojson_path=geojson_path,
