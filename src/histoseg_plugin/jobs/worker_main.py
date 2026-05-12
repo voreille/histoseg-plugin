@@ -11,7 +11,7 @@ from histoseg_plugin.settings import get_settings
 def main() -> None:
     settings = get_settings()
 
-    engine = create_db_engine(settings.queue_db_url)
+    engine = create_db_engine(settings.database_url)
     check_db_is_current(engine)
     init_db(engine)
     session_factory = create_session_factory(engine)

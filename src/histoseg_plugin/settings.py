@@ -9,7 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    queue_db_url: str = "sqlite:///./histoseg_queue.db"
+    database_url: str = "sqlite:///./histoseg_queue.db"
 
     allowed_roots: list[Path] = Field(
         default_factory=lambda: [Path("/mnt/nas6"), Path("/mnt/nas7")]

@@ -1,4 +1,4 @@
-queue_db_url: sqlite:////app/data/histoseg_queue.db
+database_url: sqlite:////app/data/histoseg_queue.db
 
 allowed_roots:
   - /mnt/nas6

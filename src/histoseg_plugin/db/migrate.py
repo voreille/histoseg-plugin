@@ -28,13 +28,13 @@ def main() -> None:
     parser.add_argument(
         "--db-url",
         default=None,
-        help="Override queue database URL. Defaults to settings.queue_db_url.",
+        help="Override queue database URL. Defaults to settings.database_url.",
     )
 
     args = parser.parse_args()
 
     settings = get_settings()
-    db_url = args.db_url or settings.queue_db_url
+    db_url = args.db_url or settings.database_url
 
     engine = create_db_engine(db_url)
 

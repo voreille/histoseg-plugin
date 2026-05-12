@@ -12,7 +12,7 @@ from histoseg_plugin.db.engine import create_db_engine, init_db
 
 @pytest.fixture
 def migrated_test_db(test_settings):
-    engine = create_db_engine(test_settings.queue_db_url)
+    engine = create_db_engine(test_settings.database_url)
     init_db(engine)
     run_migrations(engine)
 
@@ -31,7 +31,7 @@ def clear_settings_cache():
 @pytest.fixture
 def test_settings(tmp_path):
     return Settings(
-        queue_db_url=f"sqlite:///{tmp_path / 'test.db'}",
+        database_url=f"sqlite:///{tmp_path / 'test.db'}",
         allowed_roots=[tmp_path],
         debug=False,
         results_root=tmp_path / "results",
@@ -46,7 +46,7 @@ def test_config_file(tmp_path, test_settings):
     config_path = tmp_path / "settings-test.yaml"
 
     config = {
-        "queue_db_url": test_settings.queue_db_url,
+        "database_url": test_settings.database_url,
         "allowed_roots": [str(p) for p in test_settings.allowed_roots],
         "debug": test_settings.debug,
         "results_root": str(test_settings.results_root),

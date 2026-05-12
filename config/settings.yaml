@@ -1,4 +1,4 @@
-queue_db_url: sqlite:///./histoseg_queue.db
+database_url: sqlite:///./histoseg_queue.db
 
 results_root: ./results
 models_root: ./models/anorak-ignite/models
