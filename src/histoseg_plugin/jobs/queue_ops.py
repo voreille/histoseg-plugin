@@ -1,8 +1,9 @@
 import json
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
-from .hashing import build_task_payload, sha256_dict
+from .hashing import sha256_dict
 from ..db.models import Job, JobStatus, QueueState, Task, TaskStatus
 from ..results.ops import find_result_by_hash
 
@@ -90,3 +91,50 @@ def get_job(session: Session, job_id: int) -> Job | None:
 
 def get_task_by_hash(session: Session, task_hash: str) -> Task | None:
     return session.query(Task).filter(Task.task_hash == task_hash).first()
+
+
+def list_tasks(
+    session: Session,
+    status: TaskStatus | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[Task]:
+    stmt = (
+        select(Task)
+        .order_by(
+            Task.status.asc(),
+            Task.priority.desc(),
+            Task.created_at.asc(),
+        )
+        .limit(limit)
+        .offset(offset)
+    )
+
+    if status is not None:
+        stmt = stmt.where(Task.status == status)
+
+    return list(session.scalars(stmt).all())
+
+
+def count_tasks_by_status(session: Session) -> dict[str, int]:
+    rows = session.execute(
+        select(Task.status, func.count(Task.id)).group_by(Task.status)
+    ).all()
+
+    return {status.value: count for status, count in rows}
+
+
+def set_task_priority(session: Session, task_id: int, priority: int) -> Task:
+    task = session.get(Task, task_id)
+
+    if task is None:
+        raise ValueError(f"Task {task_id} not found")
+
+    if task.status != TaskStatus.PENDING:
+        raise ValueError("Only pending tasks can be reprioritized")
+
+    task.priority = priority
+    session.flush()
+    session.refresh(task)
+    session.expunge(task)
+    return task

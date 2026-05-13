@@ -22,6 +22,8 @@ dependencies = [
     "pillow",
     "h5py",
     "matplotlib",
+    "jinja2",
+    "python-multipart",
 ]
 
 [project.optional-dependencies]

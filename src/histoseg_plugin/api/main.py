@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from histoseg_plugin.api.logging import setup_logging
 from histoseg_plugin.api.routes.jobs import router as jobs_router
@@ -17,6 +18,7 @@ from histoseg_plugin.db.setup import prepare_or_check_db
 from histoseg_plugin.jobs.queue_service import QueueService
 from histoseg_plugin.results.service import ResultService
 from histoseg_plugin.settings import get_settings
+from histoseg_plugin.web.routes import router as web_router
 
 setup_logging(level="DEBUG")
 logger = logging.getLogger(__name__)
@@ -66,6 +68,12 @@ def create_app() -> FastAPI:
     app.include_router(jobs_router)
     app.include_router(results_router)
     app.include_router(queue_router)
+
+    app.include_router(web_router)
+
+    web_static_dir = Path(__file__).resolve().parents[1] / "web" / "static"
+    app.mount("/web/static", StaticFiles(directory=web_static_dir), name="web-static")
+
     return app
 
 

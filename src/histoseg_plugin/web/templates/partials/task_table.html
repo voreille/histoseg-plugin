@@ -1,0 +1,42 @@
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Status</th>
+      <th>Priority</th>
+      <th>Slide</th>
+      <th>Model</th>
+      <th>Stage</th>
+      <th>Progress</th>
+      <th>Worker</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    {% for task in tasks %}
+    <tr>
+      <td>{{ task.id }}</td>
+      <td>{{ task.status.value }}</td>
+      <td>{{ task.priority }}</td>
+      <td title="{{ task.slide_path }}">{{ task.slide_path.split("/")[-1] }}</td>
+      <td>{{ task.model_id }}</td>
+      <td>{{ task.stage or "-" }}</td>
+      <td>{{ "%.1f"|format(task.progress) }}%</td>
+      <td>{{ task.worker_id or "-" }}</td>
+      <td>
+        {% if task.status.value == "pending" %}
+        <form method="post" action="/web/tasks/{{ task.id }}/priority">
+          <input type="number" name="priority" value="{{ task.priority }}" style="width: 5em;">
+          <button type="submit">Set</button>
+        </form>
+        {% endif %}
+
+        {% if task.result_id %}
+        <a href="/api/results/{{ task.result_id }}">Result</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

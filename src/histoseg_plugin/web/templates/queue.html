@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section>
+  <h2>Queue</h2>
+
+  <div
+    id="queue-summary"
+    hx-get="/web/partials/queue-summary"
+    hx-trigger="load, every 2s"
+    hx-swap="innerHTML"
+  >
+    {% include "partials/queue_summary.html" %}
+  </div>
+
+  <form method="post" action="/web/queue/pause" style="display:inline;">
+    <button type="submit">Pause</button>
+  </form>
+
+  <form method="post" action="/web/queue/resume" style="display:inline;">
+    <button type="submit">Resume</button>
+  </form>
+</section>
+
+<section>
+  <h2>Tasks</h2>
+
+  <div
+    id="task-table"
+    hx-get="/web/partials/tasks"
+    hx-trigger="load, every 2s"
+    hx-swap="innerHTML"
+  >
+    {% include "partials/task_table.html" %}
+  </div>
+</section>
+{% endblock %}

@@ -10,7 +10,13 @@ from .queue_ops import (
     resume_queue,
     submit_batch,
     get_task_by_hash,
+    list_tasks,
+    count_tasks_by_status,
+    set_task_priority,
 )
+from sqlalchemy import select, func
+
+from histoseg_plugin.db.models import Task, TaskStatus
 
 
 class QueueService:
@@ -82,3 +88,21 @@ class QueueService:
                 "error_message": task.error_message,
                 "result_id": task.result_id,
             }
+
+    def list_tasks(
+        self,
+        *,
+        status: TaskStatus | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[Task]:
+        with self.session_factory() as session:
+            return list_tasks(session, status=status, limit=limit, offset=offset)
+
+    def count_tasks_by_status(self) -> dict[str, int]:
+        with self.session_factory() as session:
+            return count_tasks_by_status(session)
+
+    def set_task_priority(self, task_id: int, priority: int) -> Task:
+        with self.session_factory.begin() as session:
+            return set_task_priority(session, task_id, priority)
