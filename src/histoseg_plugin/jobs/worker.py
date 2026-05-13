@@ -1,4 +1,3 @@
-# histoseg_plugin/jobs/worker.py
 from __future__ import annotations
 
 import gc
@@ -7,9 +6,7 @@ import logging
 import socket
 import time
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import torch
 from sqlalchemy import select
@@ -20,7 +17,7 @@ from histoseg_plugin.core.inference.loader import load_inference_bundle
 from histoseg_plugin.core.pipeline.contracts import WSISegmentationInput
 from histoseg_plugin.core.pipeline.wsi_segmentation import run_wsi_segmentation
 from histoseg_plugin.core.serialization import to_jsonable
-from histoseg_plugin.db.models import Task, TaskStatus
+from histoseg_plugin.db.models import Task, TaskStatus, utcnow
 from histoseg_plugin.jobs.queue_ops import (
     is_queue_paused,
     refresh_job_status,
@@ -28,10 +25,11 @@ from histoseg_plugin.jobs.queue_ops import (
 from histoseg_plugin.jobs.recovery import reset_stale_running_tasks
 from histoseg_plugin.results.ops import register_result
 from histoseg_plugin.settings import Settings
-from histoseg_plugin.storage.results import (
+from histoseg_plugin.results.io import (
     build_result_dir,
     write_geojson,
     write_stats,
+    write_result_metadata,
 )
 
 logger = logging.getLogger(__name__)
@@ -114,8 +112,8 @@ def claim_next_task(
 
         task.status = TaskStatus.RUNNING
         task.worker_id = runtime.worker_id
-        task.started_at = datetime.utcnow()
-        task.heartbeat_at = datetime.utcnow()
+        task.started_at = utcnow()
+        task.heartbeat_at = utcnow()
         task.stage = "claimed"
         task.progress = 0.0
 
@@ -138,7 +136,7 @@ def update_task_progress(
 
         task.stage = stage
         task.progress = progress
-        task.heartbeat_at = datetime.utcnow()
+        task.heartbeat_at = utcnow()
 
 
 def mark_task_failed(
@@ -153,8 +151,8 @@ def mark_task_failed(
 
         task.status = TaskStatus.FAILED
         task.error_message = error_message
-        task.finished_at = datetime.utcnow()
-        task.heartbeat_at = datetime.utcnow()
+        task.finished_at = utcnow()
+        task.heartbeat_at = utcnow()
         task.stage = "failed"
 
         refresh_job_status(session, task.job_id)
@@ -196,6 +194,7 @@ def process_task(
 
     geojson_path = write_geojson(result_dir, to_jsonable(output_payload))
     stats_path = write_stats(result_dir, to_jsonable(result.statistics))
+    _ = write_result_metadata(result_dir, task)
 
     with session_factory.begin() as session:
         registered_result = register_result(
@@ -216,8 +215,8 @@ def process_task(
         db_task.progress = 100.0
         db_task.stage = "done"
         db_task.result_id = registered_result.id
-        db_task.finished_at = datetime.utcnow()
-        db_task.heartbeat_at = datetime.utcnow()
+        db_task.finished_at = utcnow()
+        db_task.heartbeat_at = utcnow()
 
         refresh_job_status(session, db_task.job_id)
 

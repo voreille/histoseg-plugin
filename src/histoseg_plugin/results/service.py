@@ -1,7 +1,7 @@
 from sqlalchemy.orm import sessionmaker
 
 from histoseg_plugin.results.ops import get_result, find_result_by_hash
-from histoseg_plugin.results.store import load_result_payload
+from histoseg_plugin.results.io import load_result_payload
 
 
 class ResultService:

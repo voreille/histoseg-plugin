@@ -1,6 +1,6 @@
 import json
 
-from histoseg_plugin.storage.results import build_result_dir, write_geojson, write_stats
+from histoseg_plugin.results.io import build_result_dir, write_geojson, write_stats
 
 
 def test_write_result_files(tmp_path):
