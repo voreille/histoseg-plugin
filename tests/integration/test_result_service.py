@@ -1,4 +1,4 @@
-from histoseg_plugin.jobs.result_ops import register_result, find_result_by_hash
+from histoseg_plugin.results.ops import register_result, find_result_by_hash
 
 
 def test_register_result(session_factory, tmp_path):

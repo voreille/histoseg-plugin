@@ -202,7 +202,7 @@ $RECYCLE.BIN/
 # Processed data outputs
 /data/
 output/
-results/
+/results/
 masks/
 patches/
 stitches/

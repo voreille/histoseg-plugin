@@ -12,11 +12,10 @@ from histoseg_plugin.api.routes.segment import router as segmentation_router
 from histoseg_plugin.db.engine import (
     create_db_engine,
     create_session_factory,
-    init_db,
 )
-from histoseg_plugin.db.migrations.runner import check_db_is_current
+from histoseg_plugin.db.setup import prepare_or_check_db
 from histoseg_plugin.jobs.queue_service import QueueService
-from histoseg_plugin.jobs.result_service import ResultService
+from histoseg_plugin.results.service import ResultService
 from histoseg_plugin.settings import get_settings
 
 setup_logging(level="DEBUG")
@@ -34,8 +33,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
 
     engine = create_db_engine(settings.database_url)
-    check_db_is_current(engine)
-    init_db(engine)
+    prepare_or_check_db(engine)
 
     session_factory = create_session_factory(engine)
 

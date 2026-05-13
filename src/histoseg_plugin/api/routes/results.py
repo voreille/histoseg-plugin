@@ -8,7 +8,7 @@ from histoseg_plugin.api.dependencies.services import (
 from histoseg_plugin.api.schemas import JobItem
 from histoseg_plugin.jobs.hashing import sha256_dict
 from histoseg_plugin.jobs.queue_service import QueueService
-from histoseg_plugin.jobs.result_service import ResultService
+from histoseg_plugin.results.service import ResultService
 from histoseg_plugin.settings import Settings, get_settings
 
 router = APIRouter(prefix="/results", tags=["results"])

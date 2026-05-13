@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 from .hashing import build_task_payload, sha256_dict
 from ..db.models import Job, JobStatus, QueueState, Task, TaskStatus
-from .result_ops import find_result_by_hash
+from ..results.ops import find_result_by_hash
 
 from histoseg_plugin.core.pipeline.contracts import WSISegmentationInput
 

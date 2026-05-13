@@ -1,7 +1,7 @@
 from sqlalchemy.orm import sessionmaker
 
-from histoseg_plugin.jobs.result_ops import get_result, find_result_by_hash
-from histoseg_plugin.jobs.result_store import load_result_payload
+from histoseg_plugin.results.ops import get_result, find_result_by_hash
+from histoseg_plugin.results.store import load_result_payload
 
 
 class ResultService:
@@ -28,7 +28,7 @@ class ResultService:
             return {
                 "result_id": result.id,
                 "task_hash": result.task_hash,
-                "slide_uri": result.slide_uri,
+                "slide_uri": result.slide_path,
                 "model_id": result.model_id,
                 "result_dir": result.result_dir,
                 "geojson_path": result.geojson_path,

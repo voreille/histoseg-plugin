@@ -26,7 +26,7 @@ from histoseg_plugin.jobs.queue_ops import (
     refresh_job_status,
 )
 from histoseg_plugin.jobs.recovery import reset_stale_running_tasks
-from histoseg_plugin.jobs.result_ops import register_result
+from histoseg_plugin.results.ops import register_result
 from histoseg_plugin.settings import Settings
 from histoseg_plugin.storage.results import (
     build_result_dir,

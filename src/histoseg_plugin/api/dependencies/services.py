@@ -1,7 +1,7 @@
 from fastapi import Request
 
 from histoseg_plugin.jobs.queue_service import QueueService
-from histoseg_plugin.jobs.result_service import ResultService
+from histoseg_plugin.results.service import ResultService
 
 
 def get_queue_service(request: Request) -> QueueService:
