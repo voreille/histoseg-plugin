@@ -1,42 +1,184 @@
-<table>
-  <thead>
-    <tr>
-      <th>ID</th>
-      <th>Status</th>
-      <th>Priority</th>
-      <th>Slide</th>
-      <th>Model</th>
-      <th>Stage</th>
-      <th>Progress</th>
-      <th>Worker</th>
-      <th>Actions</th>
-    </tr>
-  </thead>
+{% macro sortable_header(label, field, default_order="asc") %}
+{% if sort_by == field %}
+{% set next_order = "desc" if sort_order == "asc" else "asc" %}
+{% else %}
+{% set next_order = default_order %}
+{% endif %}
 
-  <tbody>
-    {% for task in tasks %}
-    <tr>
-      <td>{{ task.id }}</td>
-      <td>{{ task.status.value }}</td>
-      <td>{{ task.priority }}</td>
-      <td title="{{ task.slide_path }}">{{ task.slide_path.split("/")[-1] }}</td>
-      <td>{{ task.model_id }}</td>
-      <td>{{ task.stage or "-" }}</td>
-      <td>{{ "%.1f"|format(task.progress) }}%</td>
-      <td>{{ task.worker_id or "-" }}</td>
-      <td>
-        {% if task.status.value == "pending" %}
-        <form method="post" action="/web/tasks/{{ task.id }}/priority">
-          <input type="number" name="priority" value="{{ task.priority }}" style="width: 5em;">
-          <button type="submit">Set</button>
-        </form>
-        {% endif %}
+<th scope="col">
+  <a href="/web/queue?page=1&page_size={{ pagination.page_size }}{% if selected_status %}&status={{ selected_status.value }}{% endif %}&sort_by={{ field }}&sort_order={{ next_order }}"
+    class="sortable-header">
+    {{ label }}
 
-        {% if task.result_id %}
-        <a href="/api/results/{{ task.result_id }}">Result</a>
-        {% endif %}
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+    {% if sort_by == field %}
+    <span aria-hidden="true">
+      {% if sort_order == "asc" %}▲{% else %}▼{% endif %}
+    </span>
+    {% endif %}
+  </a>
+</th>
+{% endmacro %}
+
+
+<div class="task-table-wrapper">
+  <table class="task-table">
+    <thead>
+      <tr>
+        {{ sortable_header("ID", "id", "desc") }}
+        {{ sortable_header("Status", "status") }}
+        {{ sortable_header("Priority", "priority", "desc") }}
+        {{ sortable_header("Model", "model_id") }}
+        {{ sortable_header("Progress", "progress", "desc") }}
+        {{ sortable_header("Created", "created_at", "desc") }}
+        {{ sortable_header("Started", "started_at", "desc") }}
+        {{ sortable_header("Finished", "finished_at", "desc") }}
+        {{ sortable_header("Worker", "worker_id") }}
+        <th scope="col">Actions</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for task in tasks %}
+      <tr>
+        <td>{{ task.id }}</td>
+
+        <td>{{ task.status.value }}</td>
+
+        <td>{{ task.priority }}</td>
+
+        <td>{{ task.model_id }}</td>
+
+        <td>
+          {{ "%.1f"|format(task.progress) }}%
+
+          {% if task.stage %}
+          <div class="task-stage">
+            {{ task.stage }}
+          </div>
+          {% endif %}
+
+          {% if task.progress_message %}
+          <div class="task-progress-message">
+            {{ task.progress_message }}
+          </div>
+          {% endif %}
+        </td>
+
+        <td>{{ task.created_at }}</td>
+        <td>{{ task.started_at or "—" }}</td>
+        <td>{{ task.finished_at or "—" }}</td>
+        <td>{{ task.worker_id or "—" }}</td>
+
+        <td>
+          <div class="task-actions">
+
+            {# Running task: request graceful cancellation #}
+            {% if task.status.value == "running" %}
+
+            {% if task.cancel_requested %}
+            <button type="button" class="warning-button" disabled
+              title="The worker will stop at the next cancellation checkpoint">
+              Stop requested
+            </button>
+            {% else %}
+            <form method="post" action="/web/queue/tasks/{{ task.id }}/cancel" class="task-action-form"
+              onsubmit="return confirm('Request cancellation of running task {{ task.id }}?');">
+              <button type="submit" class="warning-button">
+                Stop
+              </button>
+            </form>
+            {% endif %}
+
+            {# Pending task: cancel immediately or delete #}
+            {% elif task.status.value == "pending" %}
+
+            <form method="post" action="/web/queue/tasks/{{ task.id }}/cancel" class="task-action-form"
+              onsubmit="return confirm('Cancel pending task {{ task.id }}?');">
+              <button type="submit" class="warning-button">
+                Cancel
+              </button>
+            </form>
+
+            <form method="post" action="/web/queue/tasks/{{ task.id }}/delete" class="task-action-form"
+              onsubmit="return confirm('Delete pending task {{ task.id }}? This action cannot be undone.');">
+              <input type="hidden" name="delete_result" value="true">
+
+              <button type="submit" class="danger-button">
+                Delete
+              </button>
+            </form>
+
+            {# Failed/cancelled/interrupted task: retry or delete #}
+            {% elif task.status.value in ["failed", "interrupted", "cancelled"] %}
+
+            <form method="post" action="/web/queue/tasks/{{ task.id }}/retry" class="task-action-form"
+              onsubmit="return confirm('Retry task {{ task.id }}?');">
+              <button type="submit" class="retry-button">
+                Retry
+              </button>
+            </form>
+
+            <form method="post" action="/web/queue/tasks/{{ task.id }}/delete" class="task-action-form"
+              onsubmit="return confirm('Delete task {{ task.id }}{% if task.result_id %} and its stored result{% endif %}? This action cannot be undone.');">
+              <input type="hidden" name="delete_result" value="true">
+
+              <button type="submit" class="danger-button">
+                Delete
+              </button>
+            </form>
+
+            {# Completed/cached and any other non-running state #}
+            {% else %}
+
+            <form method="post" action="/web/queue/tasks/{{ task.id }}/delete" class="task-action-form"
+              onsubmit="return confirm('Delete task {{ task.id }}{% if task.result_id %} and its stored result{% endif %}? This action cannot be undone.');">
+              <input type="hidden" name="delete_result" value="true">
+
+              <button type="submit" class="danger-button">
+                Delete
+              </button>
+            </form>
+
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+
+      {% else %}
+      <tr>
+        <td colspan="10">
+          No tasks match the selected filters.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+
+<nav class="pagination" aria-label="Task pagination">
+  {% if pagination.has_previous %}
+  <a
+    href="/web/queue?page={{ pagination.page - 1 }}&page_size={{ pagination.page_size }}{% if selected_status %}&status={{ selected_status.value }}{% endif %}&sort_by={{ sort_by }}&sort_order={{ sort_order }}">
+    Previous
+  </a>
+  {% else %}
+  <span class="disabled">Previous</span>
+  {% endif %}
+
+  <span>
+    Page {{ pagination.page }} of {{ pagination.total_pages }}
+    ·
+    {{ pagination.total_items }}
+    task{% if pagination.total_items != 1 %}s{% endif %}
+  </span>
+
+  {% if pagination.has_next %}
+  <a
+    href="/web/queue?page={{ pagination.page + 1 }}&page_size={{ pagination.page_size }}{% if selected_status %}&status={{ selected_status.value }}{% endif %}&sort_by={{ sort_by }}&sort_order={{ sort_order }}">
+    Next
+  </a>
+  {% else %}
+  <span class="disabled">Next</span>
+  {% endif %}
+</nav>

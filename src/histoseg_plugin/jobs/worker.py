@@ -3,6 +3,7 @@ from __future__ import annotations
 import gc
 import json
 import logging
+import shutil
 import socket
 import time
 from dataclasses import dataclass
@@ -19,20 +20,24 @@ from histoseg_plugin.core.pipeline.wsi_segmentation import run_wsi_segmentation
 from histoseg_plugin.core.serialization import to_jsonable
 from histoseg_plugin.db.models import Task, TaskStatus, utcnow
 from histoseg_plugin.jobs.queue_ops import (
-    is_queue_paused,
-    refresh_job_status,
+    is_queue_paused_op,
+    refresh_job_status_op,
 )
 from histoseg_plugin.jobs.recovery import reset_stale_running_tasks
-from histoseg_plugin.results.ops import register_result
-from histoseg_plugin.settings import Settings
 from histoseg_plugin.results.io import (
     build_result_dir,
     write_geojson,
-    write_stats,
     write_result_metadata,
+    write_stats,
 )
+from histoseg_plugin.results.ops import register_result
+from histoseg_plugin.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+
+class TaskCancellationRequested(Exception):
+    """Raised when cancellation was requested for a running task."""
 
 
 @dataclass
@@ -96,13 +101,20 @@ def claim_next_task(
     runtime: WorkerRuntime,
 ) -> Task | None:
     with session_factory.begin() as session:
-        if is_queue_paused(session):
+        if is_queue_paused_op(session):
             return None
 
         stmt = (
             select(Task)
-            .where(Task.status == TaskStatus.PENDING)
-            .order_by(Task.priority.desc(), Task.created_at.asc())
+            .where(
+                Task.status == TaskStatus.PENDING,
+                Task.cancel_requested.is_(False),
+            )
+            .order_by(
+                Task.priority.desc(),
+                Task.created_at.asc(),
+                Task.id.asc(),
+            )
             .limit(1)
         )
 
@@ -116,6 +128,8 @@ def claim_next_task(
         task.heartbeat_at = utcnow()
         task.stage = "claimed"
         task.progress = 0.0
+        task.progress_message = None
+        task.error_message = None
 
         session.flush()
         session.expunge(task)
@@ -154,8 +168,48 @@ def mark_task_failed(
         task.finished_at = utcnow()
         task.heartbeat_at = utcnow()
         task.stage = "failed"
+        task.worker_id = None
 
-        refresh_job_status(session, task.job_id)
+        refresh_job_status_op(session, task.job_id)
+
+
+def mark_task_cancelled(
+    session_factory: sessionmaker[Session],
+    task_id: int,
+) -> None:
+    with session_factory.begin() as session:
+        task = session.get(Task, task_id)
+
+        if task is None:
+            return
+
+        task.status = TaskStatus.CANCELLED
+        task.stage = "cancelled"
+        task.progress_message = "Stopped by user"
+        task.error_message = None
+        task.finished_at = utcnow()
+        task.heartbeat_at = utcnow()
+        task.worker_id = None
+
+        refresh_job_status_op(session, task.job_id)
+
+
+def raise_if_task_cancellation_requested(
+    session_factory: sessionmaker[Session],
+    task_id: int,
+) -> None:
+    with session_factory() as session:
+        row = session.execute(
+            select(Task.status, Task.cancel_requested).where(Task.id == task_id)
+        ).one_or_none()
+
+    if row is None:
+        raise RuntimeError(f"Task disappeared while processing: {task_id}")
+
+    status, cancel_requested = row
+
+    if status == TaskStatus.CANCELLED or cancel_requested:
+        raise TaskCancellationRequested(f"Cancellation requested for task {task_id}")
 
 
 def task_to_wsi_input(task: Task) -> WSISegmentationInput:
@@ -169,11 +223,27 @@ def process_task(
     task: Task,
     results_root: Path,
 ) -> None:
-    update_task_progress(session_factory, task.id, "loading_model", 1.0)
+    # Check immediately after claiming.
+    raise_if_task_cancellation_requested(session_factory, task.id)
+
+    update_task_progress(
+        session_factory,
+        task.id,
+        "loading_model",
+        1.0,
+    )
 
     inference_bundle = runtime.ensure_model_loaded(task.model_id)
 
-    update_task_progress(session_factory, task.id, "running_segmentation", 5.0)
+    # A stop request may have arrived while loading the model.
+    raise_if_task_cancellation_requested(session_factory, task.id)
+
+    update_task_progress(
+        session_factory,
+        task.id,
+        "running_segmentation",
+        5.0,
+    )
 
     wsi_input = task_to_wsi_input(task)
 
@@ -182,7 +252,16 @@ def process_task(
         inference_bundle=inference_bundle,
     )
 
-    update_task_progress(session_factory, task.id, "writing_results", 95.0)
+    # A stop request may have arrived during segmentation.
+    # With the current pipeline, it is detected only after segmentation ends.
+    raise_if_task_cancellation_requested(session_factory, task.id)
+
+    update_task_progress(
+        session_factory,
+        task.id,
+        "writing_results",
+        95.0,
+    )
 
     result_dir = build_result_dir(results_root, task.task_hash)
 
@@ -192,36 +271,57 @@ def process_task(
         "outputs": result.outputs,
     }
 
-    geojson_path = write_geojson(result_dir, to_jsonable(output_payload))
-    stats_path = write_stats(result_dir, to_jsonable(result.statistics))
-    _ = write_result_metadata(result_dir, task)
-
-    with session_factory.begin() as session:
-        registered_result = register_result(
-            session,
-            task_hash=task.task_hash,
-            slide_path=task.slide_path,
-            model_id=task.model_id,
-            result_dir=str(result_dir),
-            geojson_path=str(geojson_path),
-            stats_path=str(stats_path),
+    try: 
+        geojson_path = write_geojson(
+            result_dir,
+            to_jsonable(output_payload),
         )
+        stats_path = write_stats(
+            result_dir,
+            to_jsonable(result.statistics),
+        )
+        write_result_metadata(result_dir, task)
 
-        db_task = session.get(Task, task.id)
-        if db_task is None:
-            raise RuntimeError(f"Task disappeared while processing: {task.id}")
+        with session_factory.begin() as session:
+            db_task = session.get(Task, task.id)
 
-        db_task.status = TaskStatus.COMPLETED
-        db_task.progress = 100.0
-        db_task.stage = "done"
-        db_task.result_id = registered_result.id
-        db_task.finished_at = utcnow()
-        db_task.heartbeat_at = utcnow()
+            if db_task is None:
+                raise RuntimeError(f"Task disappeared while processing: {task.id}")
 
-        refresh_job_status(session, db_task.job_id)
+            registered_result = register_result(
+                session,
+                task_hash=task.task_hash,
+                slide_path=task.slide_path,
+                model_id=task.model_id,
+                result_dir=str(result_dir),
+                geojson_path=str(geojson_path),
+                stats_path=str(stats_path),
+            )
 
-    runtime.touch()
+            db_task.status = TaskStatus.COMPLETED
+            db_task.progress = 100.0
+            db_task.stage = "done"
+            db_task.progress_message = None
+            db_task.result_id = registered_result.id
+            db_task.finished_at = utcnow()
+            db_task.heartbeat_at = utcnow()
+            db_task.worker_id = None
 
+            refresh_job_status_op(session, db_task.job_id)
+
+
+    except Exception:
+        try:
+            if result_dir.exists():
+                shutil.rmtree(result_dir)
+        except OSError:
+            logger.exception(
+                "Could not remove incomplete result directory for task %s: %s",
+                task.id,
+                result_dir,
+            )
+
+        raise
 
 def maybe_unload_idle_model(runtime: WorkerRuntime, settings: Settings) -> None:
     if runtime.loaded_model_bundle is None:
@@ -273,10 +373,27 @@ def run_worker_forever(
                 task=task,
                 results_root=settings.results_root,
             )
+
+        except TaskCancellationRequested:
+            logger.info("Task %s was cancelled by the user", task.id)
+
+            mark_task_cancelled(
+                session_factory=session_factory,
+                task_id=task.id,
+            )
+
         except Exception as exc:
-            logger.exception("Error processing task %s: %s", task.id, exc)
+            logger.exception(
+                "Error processing task %s: %s",
+                task.id,
+                exc,
+            )
+
             mark_task_failed(
                 session_factory=session_factory,
                 task_id=task.id,
                 error_message=str(exc),
             )
+
+        finally:
+            runtime.touch()

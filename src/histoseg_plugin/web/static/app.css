@@ -55,3 +55,121 @@ th, td {
 th {
   background: #f0f0f0;
 }
+.task-table-wrapper {
+  overflow-x: auto;
+}
+
+.task-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.task-table th,
+.task-table td {
+  padding: 0.6rem;
+  border-bottom: 1px solid #ddd;
+  text-align: left;
+  vertical-align: top;
+}
+
+.sortable-header {
+  color: inherit;
+  text-decoration: none;
+}
+
+.sortable-header:hover {
+  text-decoration: underline;
+}
+
+.task-stage {
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.task-action-form {
+  margin: 0;
+}
+
+.danger-button {
+  padding: 0.35rem 0.65rem;
+  color: white;
+  background: #b42318;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.danger-button:hover {
+  background: #912018;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.pagination .disabled {
+  color: #888;
+}
+.task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.task-action-form {
+  display: inline;
+  margin: 0;
+}
+
+.task-progress-message {
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.warning-button,
+.retry-button,
+.danger-button {
+  padding: 0.35rem 0.65rem;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.warning-button {
+  background: #d97706;
+  color: white;
+}
+
+.warning-button:hover:not(:disabled) {
+  background: #b45309;
+}
+
+.warning-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.retry-button {
+  background: #2563eb;
+  color: white;
+}
+
+.retry-button:hover {
+  background: #1d4ed8;
+}
+
+.danger-button {
+  background: #b42318;
+  color: white;
+}
+
+.danger-button:hover {
+  background: #912018;
+}

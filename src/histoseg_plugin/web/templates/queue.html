@@ -4,12 +4,7 @@
 <section>
   <h2>Queue</h2>
 
-  <div
-    id="queue-summary"
-    hx-get="/web/partials/queue-summary"
-    hx-trigger="load, every 2s"
-    hx-swap="innerHTML"
-  >
+  <div id="queue-summary" hx-get="/web/partials/queue-summary" hx-trigger="load, every 2s" hx-swap="innerHTML">
     {% include "partials/queue_summary.html" %}
   </div>
 
@@ -25,12 +20,41 @@
 <section>
   <h2>Tasks</h2>
 
-  <div
-    id="task-table"
-    hx-get="/web/partials/tasks"
-    hx-trigger="load, every 2s"
-    hx-swap="innerHTML"
-  >
+  <form id="task-filters" method="get" action="/web/queue">
+    <label for="status">Status</label>
+
+    <select id="status" name="status" onchange="this.form.submit()">
+      <option value="">All statuses</option>
+
+      {% for task_status in task_statuses %}
+      <option value="{{ task_status.value }}" {% if selected_status==task_status %}selected{% endif %}>
+        {{ task_status.value | capitalize }}
+        ({{ status_counts.get(task_status.value, 0) }})
+      </option>
+      {% endfor %}
+    </select>
+
+    <label for="page-size">Tasks per page</label>
+
+    <select id="page-size" name="page_size" onchange="this.form.submit()">
+      {% for size in [25, 50, 100, 200] %}
+      <option value="{{ size }}" {% if pagination.page_size==size %}selected{% endif %}>
+        {{ size }}
+      </option>
+      {% endfor %}
+    </select>
+
+    <input type="hidden" name="sort_by" value="{{ sort_by }}">
+    <input type="hidden" name="sort_order" value="{{ sort_order }}">
+
+    <noscript>
+      <button type="submit">Apply</button>
+    </noscript>
+  </form>
+
+  <div id="task-table"
+    hx-get="/web/partials/tasks?page={{ pagination.page }}&page_size={{ pagination.page_size }}{% if selected_status %}&status={{ selected_status.value }}{% endif %}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"
+    hx-trigger="every 2s" hx-swap="innerHTML">
     {% include "partials/task_table.html" %}
   </div>
 </section>

@@ -1,10 +1,10 @@
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
 from histoseg_plugin.db.models import Task
 from histoseg_plugin.results.metadata import ResultMetadata
-
 
 GEOJSON_FILENAME = "predictions.geojson"
 STATS_FILENAME = "stats.json"
@@ -70,3 +70,24 @@ def load_result_payload(*, geojson_path: str | None, stats_path: str | None) -> 
         payload["statistics"] = stats
 
     return payload
+
+
+
+def delete_result_directory(
+    result_dir: str | Path,
+    *,
+    results_root: str | Path,
+) -> None:
+    root = Path(results_root).resolve()
+    directory = Path(result_dir).resolve()
+
+    if directory == root:
+        raise ValueError("Refusing to delete the results root itself")
+
+    if not directory.is_relative_to(root):
+        raise ValueError(
+            f"Result directory is outside the configured results root: {directory}"
+        )
+
+    if directory.exists():
+        shutil.rmtree(directory)
