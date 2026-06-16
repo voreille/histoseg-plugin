@@ -2,6 +2,8 @@ from dataclasses import dataclass
 
 import openslide
 
+from histoseg_plugin.core.wsi.utils import get_level_mpps
+
 
 @dataclass
 class ResolvedWSIInferencePlan:
@@ -16,20 +18,7 @@ class ResolvedWSIInferencePlan:
 
     needs_resampling: bool
 
-
-def get_slide_base_mpp(wsi: openslide.OpenSlide) -> float:
-    x = wsi.properties.get(openslide.PROPERTY_NAME_MPP_X)
-    y = wsi.properties.get(openslide.PROPERTY_NAME_MPP_Y)
-    if x is None or y is None:
-        raise ValueError("Slide missing MPP metadata")
-    return (float(x) + float(y)) / 2.0
-
-
-def get_level_mpps(wsi: openslide.OpenSlide) -> list[float]:
-    base_mpp = get_slide_base_mpp(wsi)
-    return [base_mpp * float(ds) for ds in wsi.level_downsamples]
-
-
+    
 def within_relative_tolerance(actual: float, target: float, tol: float) -> bool:
     return abs(actual - target) / target <= tol
 

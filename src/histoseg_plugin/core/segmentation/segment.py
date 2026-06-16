@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms as T
 
 from histoseg_plugin.core.model_runtime.base import BaseModelRunner
+from histoseg_plugin.core.wsi.utils import get_slide_base_mpp
 
 
 class TileDataset(Dataset):
@@ -57,18 +58,6 @@ class TileDataset(Dataset):
     def __del__(self):
         if self._wsi is not None:
             self._wsi.close()
-
-
-def get_mpp(wsi: openslide.OpenSlide) -> float:
-    mpp_x = wsi.properties.get(openslide.PROPERTY_NAME_MPP_X)
-    mpp_y = wsi.properties.get(openslide.PROPERTY_NAME_MPP_Y)
-    if mpp_x is None or mpp_y is None:
-        raise ValueError("WSI is missing MPP properties (openslide.mpp-x / mpp-y).")
-    if float(mpp_x) != float(mpp_y):
-        raise ValueError(
-            f"Non-square pixels not supported (mpp_x={mpp_x}, mpp_y={mpp_y})."
-        )
-    return float(mpp_x)
 
 
 # -------------------------
@@ -199,7 +188,7 @@ def run_model_and_stitch_logits(
     # model_runner = model_runner.to(device).eval()
 
     wsi = openslide.OpenSlide(slide_path)
-    mpp = get_mpp(wsi=wsi)
+    mpp = get_slide_base_mpp(wsi=wsi)
     level0_w, level0_h = wsi.level_dimensions[0]
 
     # mask grid corresponds to physical resolution output_target_mpp
