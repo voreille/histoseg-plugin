@@ -291,3 +291,4 @@ thumbnails/
 
 /resources/
 docker-compose.override.yaml
+Dockerfile.local

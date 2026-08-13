@@ -1,0 +1,30 @@
+FROM python:3.10-slim-bookworm
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    curl \
+    libgl1 \
+    libglib2.0-0 \
+    libopenslide0 \
+    openslide-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY . /app
+
+RUN python -m pip install --upgrade pip && \
+    pip install \
+        torch==2.2.2 \
+        torchvision==0.17.2 \
+        --index-url https://download.pytorch.org/whl/cpu && \
+    pip install onnxruntime && \
+    pip install debugpy && \
+    pip install -e /app
+
+CMD ["bash"]

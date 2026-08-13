@@ -24,6 +24,8 @@ dependencies = [
     "matplotlib",
     "jinja2",
     "python-multipart",
+    "onnxruntime",
+    "numpy>=1.26,<2",
 ]
 
 [project.optional-dependencies]

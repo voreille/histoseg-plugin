@@ -1,0 +1,17 @@
+services:
+  api:
+    image: histoseg-plugin:cpu-dev
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
+    deploy:
+      resources:
+        reservations:
+          devices: !reset []
+
+  worker:
+    image: histoseg-plugin:cpu-dev
+    deploy:
+      resources:
+        reservations:
+          devices: !reset []

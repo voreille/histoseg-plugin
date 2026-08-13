@@ -16,11 +16,6 @@ worker_heartbeat_seconds: 5.0
 gpu_idle_unload_seconds: 30
 stale_task_timeout_seconds: 60
 
-default_model_id: giddy-spaceship-137
+default_model_id: aigrading-anorak
 preferred_device: cuda
 use_amp: true
-
-# api:
-#   host: 0.0.0.0
-#   port: 8000
-#   reload: true
