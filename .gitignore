@@ -246,6 +246,9 @@ secrets.json
 Dockerfile.prod
 docker-compose.override.yml
 
+# Database backups
+/backups/
+
 # FastAPI / Web specific
 static/uploads/
 media/

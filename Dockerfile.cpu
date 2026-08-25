@@ -2,7 +2,8 @@ FROM python:3.10-slim-bookworm
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    UV_SYSTEM_PYTHON=1 \
+    UV_NO_CACHE=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
@@ -14,17 +15,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openslide-tools \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
 WORKDIR /app
 
-COPY . /app
+COPY pyproject.toml /app/
+COPY src/ /app/src/
+COPY config/ /app/config/
 
-RUN python -m pip install --upgrade pip && \
-    pip install \
-        torch==2.2.2 \
-        torchvision==0.17.2 \
-        --index-url https://download.pytorch.org/whl/cpu && \
-    pip install onnxruntime && \
-    pip install debugpy && \
-    pip install -e /app
+RUN uv pip install torch==2.2.2 torchvision==0.17.2 \
+      --index-url https://download.pytorch.org/whl/cpu && \
+    uv pip install debugpy && \
+    uv pip install -e /app
 
-CMD ["bash"]
+CMD ["uvicorn", "histoseg_plugin.api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

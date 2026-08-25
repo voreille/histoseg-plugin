@@ -1,39 +1,49 @@
 x-histoseg-common: &histoseg-common
-  image: histoseg-plugin:dev
+  image: histoseg-plugin:latest
   environment:
-    HISTOSEG_CONFIG: /app/config/settings-dev.yaml
+    HISTOSEG_CONFIG: /app/config/settings.yaml
     HOME: /app
     HF_HOME: /app/.cache/huggingface
-    HISTOSEG_DATABASE_URL: "${HISTOSEG_DATABASE_URL}"
+    HISTOSEG_DATABASE_URL: "${HISTOSEG_DATABASE_URL:-postgresql+psycopg2://histoseg:histoseg@db:5432/histoseg}"
   working_dir: /app
-  user: "${UID}:${GID}"
+  user: "${UID:-0}:${GID:-0}"
   restart: unless-stopped
   shm_size: "8gb"
-  deploy:
-    resources:
-      reservations:
-        devices:
-          - driver: nvidia
-            count: all
-            capabilities: [ gpu ]
+  depends_on:
+    db:
+      condition: service_healthy
 
 
 services:
   api:
     <<: *histoseg-common
-    build:
-      context: ${HOST_WORKSPACE_DIR}
-      dockerfile: histoseg-plugin/Dockerfile
     container_name: histoseg-api
     command: >
       uvicorn histoseg_plugin.api.main:create_app --factory --host 0.0.0.0 --port 8000
     ports:
       - "8090:8000"
-      - "5679:5678"
 
   worker:
     <<: *histoseg-common
     container_name: histoseg-worker
     command: python -m histoseg_plugin.jobs.worker_main
-    ports:
-      - "5678:5678"
+
+  db:
+    image: postgres:16-alpine
+    container_name: histoseg-db
+    environment:
+      POSTGRES_USER: histoseg
+      POSTGRES_PASSWORD: histoseg
+      POSTGRES_DB: histoseg
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U histoseg"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+
+volumes:
+  postgres_data:

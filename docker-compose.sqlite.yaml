@@ -1,0 +1,11 @@
+# Use with: ./compose.sh [gpu|cpu] dev -f docker-compose.sqlite.yaml up
+services:
+  api:
+    environment:
+      HISTOSEG_DATABASE_URL: "sqlite:////app/data/histoseg_queue.db"
+    depends_on: !reset {}
+
+  worker:
+    environment:
+      HISTOSEG_DATABASE_URL: "sqlite:////app/data/histoseg_queue.db"
+    depends_on: !reset {}

@@ -1,4 +1,5 @@
-database_url: sqlite:///./histoseg_queue.db
+# database_url is injected via HISTOSEG_DATABASE_URL env var in Docker.
+# For local dev outside Docker: export HISTOSEG_DATABASE_URL=sqlite:///./histoseg_queue.db
 
 results_root: ./results
 models_root: ./models/anorak-ignite/models
