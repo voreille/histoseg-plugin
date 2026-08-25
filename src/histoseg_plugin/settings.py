@@ -1,19 +1,17 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-import os
-import yaml
 
+import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    database_url: str = "sqlite:///./histoseg_queue.db"
+    database_url: str
 
-    allowed_roots: list[Path] = Field(
-        default_factory=lambda: [Path("/mnt/nas6"), Path("/mnt/nas7")]
-    )
+    allowed_roots: list[Path] = Field(default_factory=lambda: [])
 
     debug: bool = False
 

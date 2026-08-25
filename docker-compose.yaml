@@ -4,6 +4,7 @@ x-histoseg-common: &histoseg-common
     HISTOSEG_CONFIG: /app/config/settings-dev.yaml
     HOME: /app
     HF_HOME: /app/.cache/huggingface
+    HISTOSEG_DATABASE_URL: "${HISTOSEG_DATABASE_URL}"
   working_dir: /app
   user: "${UID}:${GID}"
   restart: unless-stopped

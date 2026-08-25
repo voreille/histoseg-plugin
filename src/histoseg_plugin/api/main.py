@@ -23,12 +23,6 @@ from histoseg_plugin.web.routes import router as web_router
 setup_logging(level="DEBUG")
 logger = logging.getLogger(__name__)
 
-ALLOWED_ROOTS = [
-    Path("/mnt/nas6"),
-    Path("/mnt/nas7"),
-    Path("/home/val/data"),
-]
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,7 +33,9 @@ async def lifespan(app: FastAPI):
 
     session_factory = create_session_factory(engine)
 
-    app.state.queue_service = QueueService(session_factory, results_root=settings.results_root)
+    app.state.queue_service = QueueService(
+        session_factory, results_root=settings.results_root
+    )
     app.state.result_service = ResultService(session_factory)
     app.state.allowed_roots = settings.allowed_roots
 

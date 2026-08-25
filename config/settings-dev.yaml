@@ -1,11 +1,11 @@
-database_url: sqlite:////app/data/histoseg_queue.db
+# database_url: sqlite:////app/data/histoseg_queue.db
 
 allowed_roots:
   - /mnt/nas6
   - /mnt/nas7
   - /home/val/data
 
-debug: false
+debug: true
 
 results_root: /app/results
 models_root: /app/models
