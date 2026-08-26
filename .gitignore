@@ -301,3 +301,4 @@ docker-compose.override-dev.yaml
 .nv/
 .config/
 .cache/
+histoseg_queue.db
