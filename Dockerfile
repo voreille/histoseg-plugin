@@ -1,36 +1,60 @@
-FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
+# syntax=docker/dockerfile:1
 
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS base
 
-RUN apt-get update && apt-get install -y \
+ARG DEBIAN_FRONTEND=noninteractive
+
+ENV PYTHONUNBUFFERED=1 \
+    UV_PYTHON=python3.10 \
+    UV_PYTHON_DOWNLOADS=0 \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_LINK_MODE=copy \
+    PATH="/opt/venv/bin:${PATH}"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     python3.10 \
-    python3-pip \
-    python3.10-dev \
-    python3-venv \
-    build-essential \
-    git \
-    curl \
-    libgl1 \
-    libglib2.0-0 \
     libopenslide0 \
-    openslide-tools \
     && rm -rf /var/lib/apt/lists/*
 
-RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
-    ln -sf /usr/bin/pip3 /usr/bin/pip
+COPY --from=ghcr.io/astral-sh/uv:0.12.5 \
+    /uv /usr/local/bin/uv
 
 WORKDIR /app
 
-COPY histoseg-plugin /app
-COPY pathseg-benchmark /opt/pathseg-benchmark
+# Install locked third-party runtime dependencies.
+COPY pyproject.toml uv.lock /app/
 
-RUN python -m pip install --upgrade pip && \
-    pip install torch==2.2.2 torchvision==0.17.2 \
-      --extra-index-url https://download.pytorch.org/whl/cu123 && \
-    pip install debugpy && \
-    pip install -e /opt/pathseg-benchmark && \
-    pip install -e /app
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync \
+        --locked \
+        --no-default-groups \
+        --extra cu121 \
+        --no-install-project
 
-CMD ["bash"]
+COPY src/ /app/src/
+COPY config/ /app/config/
+
+
+# Development image: application + debug and test dependencies.
+FROM base AS development
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync \
+        --locked \
+        --extra cu121
+
+CMD ["uvicorn", "histoseg_plugin.api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+
+
+# Production image: application and runtime dependencies only.
+# Kept as the final stage so it is the default build target.
+FROM base AS production
+
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync \
+        --locked \
+        --no-default-groups \
+        --extra cu121
+
+CMD ["uvicorn", "histoseg_plugin.api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

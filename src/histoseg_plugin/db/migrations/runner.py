@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Protocol
 
+from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 from histoseg_plugin.db.migrations import (
@@ -81,16 +82,39 @@ def run_migrations(engine: Engine) -> None:
 
             migration.upgrade(conn)
 
-            conn.exec_driver_sql(
-                """
-                INSERT INTO schema_migrations (version, name, applied_at)
-                VALUES (?, ?, ?)
-                """,
-                (
-                    migration.VERSION,
-                    migration.NAME,
-                    _utcnow_iso(),
+            conn.execute(
+                text(
+                    "INSERT INTO schema_migrations (version, name, applied_at) "
+                    "VALUES (:version, :name, :applied_at)"
                 ),
+                {
+                    "version": migration.VERSION,
+                    "name": migration.NAME,
+                    "applied_at": datetime.now(timezone.utc),
+                },
+            )
+
+
+def stamp_migrations(engine: Engine) -> None:
+    """Record all known migrations as applied without running them.
+
+    Use this after init_db() on a fresh database: the ORM already creates
+    the latest schema, so incremental upgrade functions must not run.
+    """
+    with engine.begin() as conn:
+        ensure_schema_migrations_table(conn)
+        for migration in MIGRATIONS:
+            conn.execute(
+                text(
+                    "INSERT INTO schema_migrations (version, name, applied_at) "
+                    "VALUES (:version, :name, :applied_at) "
+                    "ON CONFLICT (version) DO NOTHING"
+                ),
+                {
+                    "version": migration.VERSION,
+                    "name": migration.NAME,
+                    "applied_at": datetime.now(timezone.utc),
+                },
             )
 
 

@@ -1,18 +1,15 @@
-x-machine-volumes: &machine-volumes
-  - .:/app
-  - ${HOST_CONFIG_DIR}:/app/config
-  - ${HOST_DATA_DIR}:/app/data
-  - ${HOST_RESULTS_DIR}:/app/results
-  - ${HOST_MODELS_DIR}:/app/models:ro
-  - ${HOST_LOGS_DIR}:/app/logs
-  - ../pathseg-benchmark:/opt/pathseg-benchmark
-  - ~/.cache/huggingface:/app/.cache/huggingface
-  - /mnt/nas7:/mnt/nas7:ro
-  - /mnt/nas6:/mnt/nas6:ro
+x-volumes: &volumes
+  - ${HOST_RESULTS_DIR:-./results}:/app/results
+  - ${HOST_MODELS_DIR:-./models}:/app/models:ro
+  - ${HOST_LOGS_DIR:-./logs}:/app/logs
 
 services:
   api:
-    volumes: *machine-volumes
+    environment:
+      HISTOSEG_CONFIG: /app/config/settings.yaml
+    volumes: *volumes
 
   worker:
-    volumes: *machine-volumes
+    environment:
+      HISTOSEG_CONFIG: /app/config/settings.yaml
+    volumes: *volumes

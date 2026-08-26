@@ -1,25 +1,17 @@
-database_url: sqlite:///./histoseg_queue.db
+allowed_roots:
+  - /home/val/data
 
-results_root: ./results
-models_root: ./models/anorak-ignite/models
-logs_root: ./logs
+debug: false
+
+results_root: /app/results
+models_root: /app/models
+logs_root: /app/logs
 
 worker_poll_interval_seconds: 1.0
 worker_heartbeat_seconds: 5.0
-gpu_idle_unload_seconds: 300
+gpu_idle_unload_seconds: 30
 stale_task_timeout_seconds: 60
 
-default_model_id: default
+default_model_id: aigrading-anorak
 preferred_device: cuda
 use_amp: true
-
-tiling:
-  overlap_ratio: 0.25
-
-tissue:
-  enabled: true
-
-api:
-  host: 0.0.0.0
-  port: 8000
-  reload: false

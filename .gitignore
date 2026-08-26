@@ -122,6 +122,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.venv-gpu
 env/
 venv/
 ENV/
@@ -242,9 +243,8 @@ secrets.json
 .env.local
 .env.production
 
-# Docker
-Dockerfile.prod
-docker-compose.override.yml
+# Database backups
+/backups/
 
 # FastAPI / Web specific
 static/uploads/
@@ -289,7 +289,16 @@ thumbs/
 previews/
 thumbnails/
 
+# Docker
 /resources/
-docker-compose.override.yaml
 Dockerfile.local
+Dockerfile.prod
+
+docker-compose.override.yaml
+docker-compose.override-dev.yaml
+
+# build artifacts
+.nv/
+.config/
+.cache/
 histoseg_queue.db

@@ -1,24 +1,20 @@
 # Histoseg Plugin
 
-Histoseg Plugin is a Docker-first backend for whole-slide image (WSI) segmentation with:
+Docker-first backend for whole-slide image (WSI) segmentation with:
 
 * a FastAPI API service,
-* a database-backed asynchronous queue,
+* a PostgreSQL-backed asynchronous queue,
 * a worker process for model inference,
-* a small web UI to inspect and control the queue,
+* a browser queue dashboard,
 * a QuPath extension to submit jobs and import results.
 
-The current project is centered on API + worker orchestration and QuPath integration.
-
-The repository provides a **CPU-only Docker configuration** intended for initial integration and deployment testing without requiring an NVIDIA GPU. GPU inference can be enabled separately for production or performance testing.
-
-## Current Architecture
+## Architecture
 
 ```mermaid
 flowchart LR
     QP[QuPath extension] -->|POST /jobs| API[FastAPI service]
     WEB[Queue web UI] --> API
-    API --> DB[(SQLite queue DB)]
+    API --> DB[(PostgreSQL queue DB)]
     WORKER[Worker process] --> DB
     WORKER --> CORE[Segmentation pipeline]
     CORE --> OUT[Result files: GeoJSON + stats]
@@ -31,17 +27,8 @@ flowchart LR
 * Queue controls (`/queue` pause/resume)
 * Result lookup and retrieval (`/results/lookup`, `/results/{id}`)
 * Debug synchronous segmentation endpoints (`/segment/tissue`, `/segment/wsi`)
-* Browser queue dashboard (`/web/queue`) with:
-
-  * live status counters,
-  * filtering/sorting/pagination,
-  * cancel, retry, and delete actions.
-* QuPath extension under `extensions/qupath` with commands to:
-
-  * submit current slide,
-  * submit all project slides,
-  * check queue state,
-  * import existing results.
+* Browser queue dashboard (`/web/queue`) with live counters, filtering, cancel/retry/delete
+* QuPath extension under `extensions/qupath`
 
 ## Repository Layout
 
@@ -49,253 +36,229 @@ flowchart LR
 src/histoseg_plugin/
   api/        FastAPI app and routes
   core/       Segmentation + inference pipeline
-  db/         SQLAlchemy models and DB setup
+  db/         SQLAlchemy models, migrations, DB setup
   jobs/       Queue operations, service, worker loop
   results/    Result registration and file IO
   web/        Jinja templates + static queue UI
 
-extensions/qupath/
-  QuPath plugin (Gradle project)
+extensions/qupath/     QuPath plugin (Gradle project)
 
-Dockerfile
-  GPU development image
+Dockerfile             GPU image (CUDA 12.3, uv)
+Dockerfile.cpu         CPU-only image (uv)
 
-Dockerfile.cpu
-  CPU-only image
+docker-compose.yaml          Base: shared services + PostgreSQL
+docker-compose.gpu.yaml      GPU overlay: nvidia resources + GPU image
+docker-compose.cpu.yaml      CPU overlay: clears GPU resources + CPU image
+docker-compose.override.yaml Dev overlay: source mounts, debug ports (gitignored)
+docker-compose.sqlite.yaml   Optional: switch queue DB to SQLite
+docker-compose.podman.yaml   Podman rootless compatibility (userns_mode: keep-id)
 
-docker-compose.yml
-  Base Compose configuration
+compose.sh             Unified build/run entry point
 
-docker-compose.override.yml
-  Local development volume mounts
+config/
+  settings.yaml        Base settings (used when baked into image)
+  settings-dev.yaml    Dev settings (debug, NAS roots, etc.)
 
-docker-compose.cpu.yml
-  CPU-specific Compose overrides
-
-compose-cpu.sh
-  Helper script to build and start the CPU configuration
+scripts/
+  migrate_sqlite_to_pg.py  One-shot SQLite → PostgreSQL data migration
+  pg_backup.sh             Dump PostgreSQL DB to a timestamped SQL file
+  pg_restore.sh            Restore PostgreSQL DB from a SQL dump
 ```
 
 ## Prerequisites
 
-For CPU-only deployment:
+* Docker Engine + Docker Compose plugin (v2.24+ for `!reset` tag support)
+* For GPU: NVIDIA Container Toolkit + compatible GPU
 
-* Docker Engine
-* Docker Compose plugin
-* Access to slide files under the configured allowed roots
-* Model weights available under the configured models directory
+## Quick Start
 
-No NVIDIA GPU, CUDA runtime, or NVIDIA Container Toolkit is required for the CPU configuration.
+### 1. Configure your environment
 
-The CPU image uses ONNX Runtime for CPU inference and includes the required OpenSlide runtime dependencies.
-
-## Quick Start — CPU-only Docker
-
-### 1. Configure host directories
-
-The Compose configuration expects host directories for configuration, input data, model weights, results, and logs.
-
-For example:
+Copy the override example and fill in host paths:
 
 ```bash
-export UID="$(id -u)"
-export GID="$(id -g)"
-
-export HOST_CONFIG_DIR="$PWD/config"
-export HOST_DATA_DIR="$PWD/data"
-export HOST_RESULTS_DIR="$PWD/results"
-export HOST_MODELS_DIR="$PWD/models"
-export HOST_LOGS_DIR="$PWD/logs"
+cp docker-compose.override.example.yaml docker-compose.override.yaml
 ```
 
-Create the directories if needed:
+Edit `.env` with your UID/GID and host directory paths:
+
+```bash
+UID=$(id -u)
+GID=$(id -g)
+HOST_CONFIG_DIR=./config
+HOST_DATA_DIR=./data
+HOST_RESULTS_DIR=./results
+HOST_MODELS_DIR=./models
+HOST_LOGS_DIR=./logs
+```
+
+Create directories:
 
 ```bash
 mkdir -p data results models logs
 ```
 
-Place the model directory and weights under:
+### 2. Build and start
 
-```text
-models/
-```
-
-The actual model selected by the worker is configured through `default_model_id` in the application settings.
-
-### 2. Build and start the CPU services
-
-A helper script is provided:
+Use `compose.sh` with device (`gpu`/`cpu`) and environment (`dev`/`prod`):
 
 ```bash
-./compose-cpu.sh
+# GPU dev (source code mounted, debug ports open)
+./compose.sh gpu dev up --build
+
+# CPU dev
+./compose.sh cpu dev up --build
+
+# GPU prod (code baked into image, no debug ports)
+./compose.sh gpu prod up --build
+
+# CPU prod
+./compose.sh cpu prod up --build
 ```
 
-It starts the application using the base Compose configuration together with the CPU-specific overrides.
+What each combination loads:
 
-Equivalent command:
+| Command | Compose files loaded |
+|---|---|
+| `gpu dev` | base + gpu + override (auto) |
+| `cpu dev` | base + cpu + override (auto) |
+| `gpu prod` | base + gpu |
+| `cpu prod` | base + cpu |
 
-```bash
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.override.yml \
-  -f docker-compose.cpu.yml \
-  up --build
-```
-
-To run in detached mode:
-
-```bash
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.override.yml \
-  -f docker-compose.cpu.yml \
-  up --build -d
-```
+The PostgreSQL `db` service starts automatically as part of the base stack.
 
 ### 3. Verify
-
-Check the API:
 
 ```bash
 curl http://localhost:8090/health
 ```
 
-Follow worker logs:
+## Compose File Reference
+
+| File | Purpose |
+|---|---|
+| `docker-compose.yaml` | Base: shared service config, PostgreSQL `db` service |
+| `docker-compose.gpu.yaml` | Adds nvidia resources and GPU image build |
+| `docker-compose.cpu.yaml` | Clears GPU resources, sets CPU image build |
+| `docker-compose.override.yaml` | Dev: source mounts, config mount, debug ports, `settings-dev.yaml` — **gitignored** |
+| `docker-compose.sqlite.yaml` | Replaces PostgreSQL with a local SQLite file (dev only) |
+| `docker-compose.podman.yaml` | Adds `userns_mode: keep-id` for Podman rootless deployments |
+
+To use the SQLite overlay:
 
 ```bash
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.override.yml \
-  -f docker-compose.cpu.yml \
-  logs -f worker
+./compose.sh gpu dev -f docker-compose.sqlite.yaml up
 ```
 
-### Stop the CPU stack
+To use the Podman overlay (production on Podman):
 
 ```bash
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.override.yml \
-  -f docker-compose.cpu.yml \
-  down
+podman compose \
+  -f docker-compose.yaml \
+  -f docker-compose.gpu.yaml \
+  -f docker-compose.podman.yaml \
+  up --build
 ```
 
-## CPU vs GPU Configuration
+## Database
 
-The project currently provides separate Docker images for CPU and GPU execution.
+The stack starts a `postgres:16-alpine` container (`histoseg-db`).
+The connection URL defaults to:
 
-### CPU
-
-The CPU configuration uses:
-
-```text
-Dockerfile.cpu
-docker-compose.cpu.yml
+```
+postgresql+psycopg2://histoseg:histoseg@db:5432/histoseg
 ```
 
-and does not request NVIDIA devices.
-
-This is the recommended configuration for initial integration and infrastructure testing.
-
-### GPU
-
-The standard development configuration uses:
-
-```text
-Dockerfile
-docker-compose.yml
-```
-
-and can request NVIDIA GPU resources.
-
-GPU execution requires the NVIDIA Container Toolkit and a compatible host GPU.
-
-For local GPU development, the standard workflow remains:
+Override for an external cluster (production):
 
 ```bash
-docker compose up
+export HISTOSEG_DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/dbname
+./compose.sh gpu prod up
 ```
 
-or:
+### Migrate from SQLite
+
+If you have existing data in a SQLite queue database, migrate it once after starting the PostgreSQL stack:
 
 ```bash
-docker compose up --build
+# Start the stack (schema is initialised automatically on first boot)
+./compose.sh gpu dev up -d
+
+# Dry-run to verify
+docker exec histoseg-api python scripts/migrate_sqlite_to_pg.py \
+    data/histoseg_queue.db \
+    "postgresql+psycopg2://histoseg:histoseg@db:5432/histoseg" \
+    --dry-run
+
+# Run for real
+docker exec histoseg-api python scripts/migrate_sqlite_to_pg.py \
+    data/histoseg_queue.db \
+    "postgresql+psycopg2://histoseg:histoseg@db:5432/histoseg"
 ```
+
+The SQLite file is left untouched; fall back with `-f docker-compose.sqlite.yaml` if needed.
+
+### Backup and restore
+
+```bash
+# Dump to backups/ (timestamped)
+./scripts/pg_backup.sh
+
+# Restore from a dump (asks for confirmation)
+./scripts/pg_restore.sh backups/histoseg_20260825_143012.sql
+```
+
+Run a backup before schema migrations and before production deploys.
 
 ## Service Ports
 
-* API: `http://localhost:8090`
+| Service | Host port | Container port |
+|---|---|---|
+| API | 8090 | 8000 |
+| API debugpy (dev) | 5679 | 5678 |
+| Worker debugpy (dev) | 5678 | 5678 |
+
 * API docs: `http://localhost:8090/docs`
 * Queue UI: `http://localhost:8090/web/queue`
-* Debug ports:
-
-  * API debugpy: host `5679` -> container `5678`
-  * Worker debugpy: host `5678` -> container `5678`
 
 ## Configuration
 
-Runtime settings are loaded from YAML using `HISTOSEG_CONFIG`.
+Runtime settings are loaded from YAML via `HISTOSEG_CONFIG`.
 
-In Docker:
+| Context | Config file |
+|---|---|
+| Docker dev (override loaded) | `config/settings-dev.yaml` |
+| Docker prod (image baked) | `config/settings.yaml` |
+| Local (outside Docker) | `config/settings.yaml` or set `HISTOSEG_CONFIG` |
 
-```text
-/app/config/settings-dev.yaml
+`database_url` is always injected via the `HISTOSEG_DATABASE_URL` environment variable.
+For local development without Docker:
+
+```bash
+export HISTOSEG_DATABASE_URL=sqlite:///./histoseg_queue.db
 ```
 
-Local fallback:
+Key settings:
 
-```text
-config/settings.yaml
-```
-
-Important settings include:
-
-* `database_url`: queue database path, SQLite by default
 * `allowed_roots`: slide path allowlist for API requests
 * `results_root`: output directory for job artifacts
 * `models_root`: model directory for worker loading
 * `default_model_id`: default model subdirectory name
-* `preferred_device`: inference device (`cpu` for the CPU deployment)
-
-For CPU deployment, configure:
-
-```yaml
-preferred_device: cpu
-```
-
-Model-specific runtime information is defined by the model manifest. For an ONNX model, for example:
-
-```yaml
-inference:
-  runtime: onnx
-  weights: model.onnx
-  preferred_device: cpu
-```
+* `preferred_device`: `cuda` or `cpu`
+* `use_amp`: enable automatic mixed precision (GPU only)
 
 ## Models
 
-Models are expected under the configured `models_root`.
-
-A model directory typically contains:
+Place model directories under `models_root`:
 
 ```text
 models/
   <model_id>/
     manifest.yaml
-    model.onnx
+    model.onnx   (or PyTorch weights)
 ```
 
-For CPU inference, ONNX models are executed using the CPU ONNX Runtime backend.
-
-The model manifest defines, among other things:
-
-* model runtime,
-* weights file,
-* expected tile size and resolution,
-* input layout and datatype,
-* output heads,
-* labels,
-* output geometry.
+The model manifest defines runtime, weights file, tile size/resolution, input layout, output heads, labels, and output geometry.
 
 ## API Overview
 
@@ -310,27 +273,9 @@ GET /health
 ```http
 POST /jobs
 Content-Type: application/json
-```
 
-Example request:
-
-```json
 {
-  "items": [
-    {
-      "slide_uri": "file:///path/to/slide.svs",
-      "model_id": "default"
-    }
-  ]
-}
-```
-
-Response:
-
-```json
-{
-  "job_id": 42,
-  "status": "pending"
+  "items": [{ "slide_uri": "file:///path/to/slide.svs", "model_id": "default" }]
 }
 ```
 
@@ -355,8 +300,6 @@ POST /results/lookup
 GET  /results/{result_id}
 ```
 
-`/results/lookup` accepts a `JobItem` payload and resolves whether an equivalent task already exists using the same parameter hash.
-
 ### Debug synchronous routes
 
 ```http
@@ -364,112 +307,40 @@ POST /segment/tissue
 POST /segment/wsi
 ```
 
-These routes are intended for development and debugging workflows.
-
-## Queue Web App
-
-Open:
-
-```text
-http://localhost:8090/web/queue
-```
-
-Features:
-
-* auto-refreshing queue summary and task table,
-* status filters and sortable columns,
-* pause/resume queue,
-* task operations:
-
-  * stop running,
-  * cancel pending,
-  * retry failed/cancelled/interrupted,
-  * delete task and associated result if unreferenced.
-
-## Result Storage
-
-Each task writes files into:
-
-```text
-results/<task_hash>/
-  predictions.geojson
-  stats.json
-  result_metadata.json
-```
-
-The database stores metadata and file paths.
-
-`/results/{result_id}` returns the GeoJSON payload together with the associated statistics.
-
 ## QuPath Integration
-
-The QuPath plugin lives in:
-
-```text
-extensions/qupath
-```
 
 ### Build extension
 
 ```bash
-cd extensions/qupath
-./gradlew build
+cd extensions/qupath && ./gradlew build
 ```
 
-Output JAR files are created in:
+Drag the output JAR (`build/libs/`) into QuPath to install.
 
-```text
-extensions/qupath/build/libs
-```
+### Configure
 
-### Install in QuPath
+`Extensions > HistoSeg > Settings...` → set server URL and model ID.
 
-Drag the built JAR into QuPath to install it.
-
-### Configure plugin
-
-In QuPath:
-
-* Open `Extensions > HistoSeg > Settings...`
-* Set:
-
-  * Server URL, default: `http://localhost:8090`
-  * Model ID, default: `default`
-
-### Available commands
+### Commands
 
 * `Submit current slide...`
 * `Submit all project slides...`
 * `Import existing result for current slide...`
 * `Queue status...`
-* `Settings...`
 
 ## Local Development Without Docker
 
-Docker is the reference workflow, but local execution is possible.
-
 ```bash
-python -m venv .venv
-source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate
 pip install -e .
 
-export HISTOSEG_CONFIG="config/settings.yaml"
+export HISTOSEG_CONFIG=config/settings.yaml
+export HISTOSEG_DATABASE_URL=sqlite:///./histoseg_queue.db
 
-# API
-uvicorn histoseg_plugin.api.main:create_app \
-  --factory \
-  --host 0.0.0.0 \
-  --port 8000
-
-# Worker, in a separate shell
+uvicorn histoseg_plugin.api.main:create_app --factory --host 0.0.0.0 --port 8000
+# worker in a separate shell:
 python -m histoseg_plugin.jobs.worker_main
 ```
-
-When using local mode, make sure:
-
-* OpenSlide system libraries are installed,
-* required Python runtime dependencies are installed,
-* configured `allowed_roots` are valid on the machine.
 
 ## Testing
 
@@ -483,64 +354,22 @@ pytest
 
 Add the slide parent directory to `allowed_roots` in the settings YAML.
 
+### `RuntimeError: Database schema is version 0`
+
+The schema was initialised but migrations were not stamped. Run:
+
+```bash
+docker exec histoseg-api python -m histoseg_plugin.db.migrate upgrade
+```
+
 ### Queue appears stuck
 
 Check worker logs:
 
 ```bash
-docker compose \
-  -f docker-compose.yml \
-  -f docker-compose.override.yml \
-  -f docker-compose.cpu.yml \
-  logs -f worker
+./compose.sh gpu dev logs -f worker
 ```
 
-Also confirm that the queue is not paused in:
+Confirm the queue is not paused at `http://localhost:8090/web/queue`.
 
-```text
-http://localhost:8090/web/queue
-```
 
-### Permission issues writing results or database files
-
-Ensure the exported `UID` and `GID` match the host user before starting the containers:
-
-```bash
-export UID="$(id -u)"
-export GID="$(id -g)"
-```
-
-Also verify that the configured host directories are writable.
-
-### Model cannot be found
-
-Verify that:
-
-* the model directory is mounted under `models_root`,
-* `default_model_id` matches the model directory name,
-* the model manifest references the correct weights filename.
-
-### ONNX Runtime errors
-
-For the CPU image, the model manifest should specify:
-
-```yaml
-inference:
-  runtime: onnx
-  preferred_device: cpu
-```
-
-The CPU image uses the `onnxruntime` package and does not require CUDA.
-
-### `slide_uri` validation errors
-
-Use absolute paths or `file://` URIs pointing to files that exist and are readable from inside the container.
-
-Remember that the path visible to the container may differ from the corresponding host path depending on the configured volume mounts.
-
-## Notes
-
-* Coordinates and GeoJSON outputs are in level-0 slide space.
-* CPU inference is primarily intended for integration and functional testing and may be significantly slower than GPU inference on large WSIs.
-* The GPU deployment can be enabled later without changing the API or queue architecture.
-* The old tiling-focused README and roadmap are obsolete for the current architecture.

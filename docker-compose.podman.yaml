@@ -1,0 +1,18 @@
+# Podman rootless compatibility overlay.
+# Without this, user: "${UID}:${GID}" maps to a subuid offset inside the
+# container's user namespace, breaking bind-mount file ownership.
+# userns_mode: keep-id remaps the host user to the same UID inside the container.
+#
+# Usage:
+#   podman compose -f docker-compose.yaml -f docker-compose.gpu.yaml \
+#                  -f docker-compose.podman.yaml up
+# Or via compose.sh if you extend it with a --podman flag.
+services:
+  api:
+    userns_mode: keep-id
+
+  worker:
+    userns_mode: keep-id
+
+  db:
+    userns_mode: keep-id
