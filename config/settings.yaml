@@ -1,6 +1,4 @@
 allowed_roots:
-  - /mnt/nas6
-  - /mnt/nas7
   - /home/val/data
 
 debug: false

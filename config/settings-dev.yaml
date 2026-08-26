@@ -3,7 +3,7 @@ allowed_roots:
   - /mnt/nas7
   - /home/val/data
 
-debug: true
+debug: false
 
 results_root: /app/results
 models_root: /app/models

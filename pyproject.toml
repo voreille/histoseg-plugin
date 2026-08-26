@@ -5,11 +5,12 @@ requires = [
 ]
 build-backend = "setuptools.build_meta"
 
+
 [project]
 name = "histoseg-plugin"
 version = "0.1.0"
 description = "A FastAPI core for histopathology pipelines with pluggable viewer adapters"
-requires-python = ">=3.10,<4"
+requires-python = ">=3.10,<3.11"
 
 dependencies = [
     "pydantic>=2.13.4,<3",
@@ -17,7 +18,7 @@ dependencies = [
     "pyyaml>=6.0.3,<7",
     "fastapi>=0.141.1,<1",
     "uvicorn[standard]>=0.52.4,<1",
-    "SQLAlchemy>=2.0.52,<3",
+    "sqlalchemy>=2.0.52,<3",
     "click>=8.4.2,<9",
     "tqdm>=4.70.0,<5",
     "numpy>=1.26.4,<2",
@@ -32,18 +33,153 @@ dependencies = [
     "psycopg2-binary>=2.9.12,<3",
 ]
 
+
 [project.optional-dependencies]
+cpu = [
+    "torch==2.2.2",
+    "torchvision==0.17.2",
+]
+
+cu121 = [
+    "torch==2.2.2",
+    "torchvision==0.17.2",
+]
+
+
+[dependency-groups]
+dev = [
+    "debugpy>=1.8.21,<2",
+    "ruff>=0.16.4,<0.17",
+]
+
 test = [
     "pytest>=8.4.2,<9",
     "pytest-mock>=3.15.1,<4",
     "pytest-cov>=5.0.0,<6",
     "httpx>=0.28.1,<1",
+    "httpx2>=2.12.0,<3",
 ]
 
-dev = [
-    "histoseg-plugin[test]",
-    "debugpy>=1.8.21,<2",
+
+[tool.uv]
+default-groups = [
+    "dev",
+    "test",
 ]
+
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "cu121" },
+    ],
+]
+
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu121", extra = "cu121" },
+]
+
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu121", extra = "cu121" },
+]
+
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+
+[[tool.uv.index]]
+name = "pytorch-cu121"
+url = "https://download.pytorch.org/whl/cu121"
+explicit = true
+
+
+[tool.ruff]
+target-version = "py310"
+line-length = 99
+indent-width = 4
+
+exclude = [
+    ".git",
+    "__pycache__",
+    "dist",
+    "venv",
+    ".venv",
+    "*.ipynb",
+    ".eggs",
+    "*.egg-info",
+    "*.egg",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+]
+
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # Pyflakes
+    "B",    # flake8-bugbear
+    "SIM",  # flake8-simplify
+    "I",    # isort
+    "S",    # flake8-bandit
+    "PT",   # flake8-pytest-style
+]
+
+# Ruff's formatter does not guarantee that every line fits within line-length.
+ignore = [
+    "E501",
+]
+
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+fixable = ["ALL"]
+
+
+[tool.ruff.lint.per-file-ignores]
+# Assertions are the standard way to express expectations in pytest.
+"tests/**/*.py" = [
+    "S101",
+]
+
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+
+[tool.pytest.ini_options]
+minversion = "8.4"
+
+testpaths = [
+    "tests",
+]
+
+python_files = [
+    "test_*.py",
+]
+
+python_classes = [
+    "Test*",
+]
+
+python_functions = [
+    "test_*",
+]
+
+addopts = "-v -ra --strict-markers --strict-config"
+
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+]
+
 
 [tool.setuptools.packages.find]
 where = ["src"]
