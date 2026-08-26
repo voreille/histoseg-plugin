@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -28,8 +28,10 @@ COPY pyproject.toml /app/
 COPY src/ /app/src/
 COPY config/ /app/config/
 
-RUN uv pip install torch==2.2.2 torchvision==0.17.2 \
-      --extra-index-url https://download.pytorch.org/whl/cu123 && \
+RUN uv pip install \
+      torch==2.2.2 \
+      torchvision==0.17.2 \
+      --index-url https://download.pytorch.org/whl/cu121 && \
     uv pip install debugpy && \
     uv pip install -e /app
 

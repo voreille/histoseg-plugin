@@ -3,7 +3,6 @@ x-histoseg-common: &histoseg-common
   environment:
     HISTOSEG_CONFIG: /app/config/settings.yaml
     HOME: /app
-    HF_HOME: /app/.cache/huggingface
     HISTOSEG_DATABASE_URL: "${HISTOSEG_DATABASE_URL:-postgresql+psycopg2://histoseg:histoseg@db:5432/histoseg}"
   working_dir: /app
   user: "${UID:-0}:${GID:-0}"
@@ -32,9 +31,9 @@ services:
     image: postgres:16-alpine
     container_name: histoseg-db
     environment:
-      POSTGRES_USER: histoseg
-      POSTGRES_PASSWORD: histoseg
-      POSTGRES_DB: histoseg
+      POSTGRES_USER: "${POSTGRES_USER:-histoseg}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}"
+      POSTGRES_DB: "${POSTGRES_DB:-histoseg}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

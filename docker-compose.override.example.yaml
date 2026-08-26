@@ -1,29 +1,15 @@
-# Copy this file to docker-compose.override.yaml and adjust paths for your machine.
-# This file is auto-loaded by Docker Compose when running dev scenarios.
-# It is gitignored — do not commit your local version.
-
-x-dev-volumes: &dev-volumes
-  - .:/app
-  - ${HOST_CONFIG_DIR:-./config}:/app/config
-  - ${HOST_DATA_DIR:-./data}:/app/data
+x-volumes: &volumes
   - ${HOST_RESULTS_DIR:-./results}:/app/results
   - ${HOST_MODELS_DIR:-./models}:/app/models:ro
   - ${HOST_LOGS_DIR:-./logs}:/app/logs
-  - ~/.cache/huggingface:/app/.cache/huggingface
-  # Add machine-specific mounts below (e.g. NAS, external storage)
-  # - /mnt/nas7:/mnt/nas7:ro
 
 services:
   api:
     environment:
-      HISTOSEG_CONFIG: /app/config/settings-dev.yaml
-    volumes: *dev-volumes
-    ports:
-      - "5679:5678"
+      HISTOSEG_CONFIG: /app/config/settings.yaml
+    volumes: *volumes
 
   worker:
     environment:
-      HISTOSEG_CONFIG: /app/config/settings-dev.yaml
-    volumes: *dev-volumes
-    ports:
-      - "5678:5678"
+      HISTOSEG_CONFIG: /app/config/settings.yaml
+    volumes: *volumes

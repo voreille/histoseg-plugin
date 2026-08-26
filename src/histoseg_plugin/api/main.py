@@ -41,6 +41,7 @@ async def lifespan(app: FastAPI):
 
     if settings.debug:
         logger.info("Waiting for debugger attach...")
+        logger.info("Settings debug mode is enabled. You can attach a debugger to port 5678.")
         import debugpy
 
         debugpy.listen(("0.0.0.0", 5678))

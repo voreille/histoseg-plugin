@@ -27,8 +27,8 @@ case "$DEVICE" in
 esac
 
 case "$ENV" in
-  dev)  FILES+=(-f docker-compose.override.yaml) ;;
-  prod) ;;
+  dev)  FILES+=(-f docker-compose.override-dev.yaml) ;;
+  prod)  FILES+=(-f docker-compose.override.yaml) ;;
   *) usage ;;
 esac
 
