@@ -5,7 +5,28 @@ from typing import Any
 
 import yaml
 from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+
+
+class YamlConfigSettingsSource(PydanticBaseSettingsSource):
+    def __init__(self, settings_cls):
+        super().__init__(settings_cls)
+        self.config_env_var = "HISTOSEG_CONFIG"
+        self.default_path = "./config/settings.yaml"
+
+    def get_field_value(self, field, field_name):
+        return None, field_name, False
+
+    def __call__(self) -> dict[str, Any]:
+        env_var = os.environ.get(self.config_env_var)
+        yaml_path = Path(env_var) if env_var else Path(self.default_path)
+        try:
+            with yaml_path.open("r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+        except FileNotFoundError:
+            pass
+
+        return {}
 
 
 class Settings(BaseSettings):
@@ -32,26 +53,25 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Setup precedence for settings sources:
+            1) settings.yaml file
+            2) env variables
 
-def _load_yaml_config(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        raise FileNotFoundError(f"Config file not found: {path}")
-
-    with path.open("r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-
-    if not isinstance(data, dict):
-        raise ValueError(f"YAML config must contain a mapping at top level: {path}")
-
-    return data
-
-
-def build_settings(config_path: str | None = None) -> Settings:
-    path_str = (
-        config_path or os.environ.get("HISTOSEG_CONFIG") or "config/settings.yaml"
-    )
-    yaml_data = _load_yaml_config(Path(path_str).resolve())
-    return Settings(**yaml_data)
+        Standard BaseSettings method. Arguments should not be changed"""
+        return (
+            init_settings,
+            YamlConfigSettingsSource(settings_cls),
+            env_settings,
+        )
 
 
 def ensure_settings_dirs(settings: Settings) -> Settings:
@@ -63,4 +83,4 @@ def ensure_settings_dirs(settings: Settings) -> Settings:
 
 @lru_cache(maxsize=1)
 def get_settings(config_path: str | None = None) -> Settings:
-    return ensure_settings_dirs(build_settings(config_path))
+    return ensure_settings_dirs(Settings())
