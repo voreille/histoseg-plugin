@@ -302,3 +302,4 @@ docker-compose.override-dev.yaml
 .config/
 .cache/
 histoseg_queue.db
+docker-compose.override-dev.yaml
